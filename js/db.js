@@ -45,6 +45,29 @@ export function open() {
   });
 }
 
+/* Браузер вправе вытеснить хранилище, когда на телефоне кончается место, —
+   и архив здоровья исчезнет без предупреждения. Просим отметить его как
+   постоянное: в Телеграме и на Android это обычно даётся молча. */
+export async function requestPersistence() {
+  try {
+    if (!navigator.storage?.persist) return null;
+    if (await navigator.storage.persisted?.()) return true;
+    return await navigator.storage.persist();
+  } catch { return null; }
+}
+
+export async function storageInfo() {
+  try {
+    const est = await navigator.storage?.estimate?.();
+    if (!est) return null;
+    return {
+      usedMb: Math.round((est.usage || 0) / 1048576 * 10) / 10,
+      quotaMb: Math.round((est.quota || 0) / 1048576),
+      persisted: await navigator.storage.persisted?.().catch(() => null),
+    };
+  } catch { return null; }
+}
+
 function tx(store, mode = 'readonly') {
   return open().then(db => db.transaction(store, mode).objectStore(store));
 }
@@ -159,9 +182,11 @@ export function cacheModels(list) {
 
 export async function exportAll() {
   const [docs, meas, meals] = await Promise.all([all('docs'), all('meas'), all('meals')]);
+  // ключ OpenRouter в выгрузку не кладём: файл человек может кому-то переслать
+  const { apiKey, ...profile } = settings();
   return {
     exportedAt: new Date().toISOString(),
-    profile: settings(),
+    profile,
     docs: docs.map(d => ({ ...d })),
     measurements: meas,
     meals: meals.map(m => ({ ...m })),

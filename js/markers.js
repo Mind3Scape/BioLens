@@ -101,7 +101,9 @@ export const MARKERS = {
     syn:['гликированный гемоглобин','гликозилированный гемоглобин','hba1c','hb a1c','a1c'],
     grades:[{to:5.7,label:'норма',tone:'ok'},{to:6.5,label:'зона преддиабета',tone:'edge'},{label:'уровень диабета, нужен повтор и врач',tone:'out'}],
     note:'Показывает средний сахар за 2–3 месяца. Российская норма — до 6.0, международная — до 5.7.' },
-  insulin: { t:'Инсулин', g:'sugar', unit:'мкЕд/мл', conv:{'мкед/мл':1,'пмоль/л':1/6.945}, ref:[2.6,24.9],
+  insulin: { t:'Инсулин', g:'sugar', unit:'мкЕд/мл',
+    conv:{'мкед/мл':1,'мкме/мл':1,'мед/л':1,'ме/л':1,'uiu/ml':1,'µiu/ml':1,'miu/l':1,'пмоль/л':1/6.945,'pmol/l':1/6.945},
+    ref:[2.6,24.9],
     syn:['инсулин','insulin'],
     note:'Имеет смысл только натощак и только вместе с глюкозой — по отдельности число почти ни о чём не говорит.' },
 
@@ -374,6 +376,9 @@ export function toCanonical(key, value, unitRaw) {
   const u = norm(unitRaw).replace(/\s/g, '');
   if (!u) return { value: v, unit: m.unit, converted: false, factor: 1 };
   const table = m.conv || {};
+  // у счётных показателей (СОЭ, MCV, коэффициенты) единица одна и переводить нечего —
+  // пустая таблица не значит «единица незнакомая»
+  if (!Object.keys(table).length) return { value: v, unit: m.unit, converted: false, factor: 1 };
   for (const [k, f] of Object.entries(table)) {
     if (norm(k).replace(/\s/g, '') === u) {
       return { value: +(v * f).toFixed(4), unit: m.unit, converted: f !== 1, factor: f };
@@ -400,16 +405,20 @@ export function markerGroup(key) {
 }
 
 /* статус относительно коридора: ok | edge | out | unknown
-   edge — в пределах 8% от границы: «у границы», как в макете */
+   edge — «у границы»: 8% от ширины коридора.
+
+   У половины показателей коридор односторонний («до 42», «от 0.9»), ширины у него
+   нет — и раньше «у границы» там не срабатывало вообще: АЛТ 41 при норме до 42
+   выглядела спокойным «в норме». Для односторонней границы считаем запас
+   от самой границы. */
 export function statusOf(value, low, high) {
   const v = Number(value);
   if (!isFinite(v) || (low == null && high == null)) return 'unknown';
   if (low != null && v < low) return 'out';
   if (high != null && v > high) return 'out';
   const span = (high != null && low != null) ? (high - low) : null;
-  if (span && span > 0) {
-    const pad = span * 0.08;
-    if ((low != null && v - low <= pad) || (high != null && high - v <= pad)) return 'edge';
-  }
+  const pad = (bound) => span && span > 0 ? span * 0.08 : Math.abs(Number(bound)) * 0.05;
+  if (low != null && v - low <= pad(low)) return 'edge';
+  if (high != null && high - v <= pad(high)) return 'edge';
   return 'ok';
 }

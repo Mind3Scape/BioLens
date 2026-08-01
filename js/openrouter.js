@@ -55,6 +55,30 @@ export async function checkKey(key) {
    Если модель не умеет response_format — тихо повторяем без него. */
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+/* Ни один запрос не имеет права висеть вечно: зависшая страница останавливала
+   всю очередь разбора без единого сообщения на экране. */
+const TIMEOUT = 120000;
+
+async function post(body, key, signal) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), TIMEOUT);
+  const onAbort = () => ac.abort();
+  signal?.addEventListener('abort', onAbort);
+  try {
+    return await fetch(`${BASE}/chat/completions`, {
+      method: 'POST', headers: headers(key), body: JSON.stringify(body), signal: ac.signal,
+    });
+  } catch (e) {
+    if (e?.name === 'AbortError' && !signal?.aborted) {
+      throw new Error('Модель не ответила за две минуты — попробуй ещё раз или выбери другую');
+    }
+    throw new Error('Нет связи с OpenRouter — проверь интернет');
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
+  }
+}
+
 export async function chat({ messages, model, schema = null, temperature = 0.2, maxTokens = 3000, signal, tries = 3 }) {
   const s = settings();
   const key = s.apiKey;
@@ -64,13 +88,13 @@ export async function chat({ messages, model, schema = null, temperature = 0.2, 
   const body = { model, messages, temperature, max_tokens: maxTokens };
   if (schema) body.response_format = { type: 'json_schema', json_schema: { name: 'result', strict: true, schema } };
 
-  let r = await fetch(`${BASE}/chat/completions`, { method: 'POST', headers: headers(key), body: JSON.stringify(body), signal });
+  let r = await post(body, key, signal);
 
   // бесплатные модели часто просят подождать — подождём и попробуем ещё, это дешевле, чем терять страницу
   for (let attempt = 1; attempt < tries && (r.status === 429 || r.status >= 500); attempt++) {
     const wait = r.status === 429 ? attempt * 4000 : attempt * 1500;
     await sleep(wait);
-    r = await fetch(`${BASE}/chat/completions`, { method: 'POST', headers: headers(key), body: JSON.stringify(body), signal });
+    r = await post(body, key, signal);
   }
 
   if (!r.ok && schema) {
@@ -78,7 +102,7 @@ export async function chat({ messages, model, schema = null, temperature = 0.2, 
     if (/response_format|json_schema|structured/i.test(txt)) {
       delete body.response_format;
       body.messages = withJsonNudge(messages);
-      r = await fetch(`${BASE}/chat/completions`, { method: 'POST', headers: headers(key), body: JSON.stringify(body), signal });
+      r = await post(body, key, signal);
     } else {
       throw new Error(apiError(r.status, txt));
     }
@@ -86,10 +110,18 @@ export async function chat({ messages, model, schema = null, temperature = 0.2, 
   if (!r.ok) throw new Error(apiError(r.status, await r.text()));
 
   const j = await r.json();
-  const msg = j.choices?.[0]?.message;
+  const choice = j.choices?.[0];
+  const msg = choice?.message;
   const text = typeof msg?.content === 'string'
     ? msg.content
     : (Array.isArray(msg?.content) ? msg.content.map(p => p.text || '').join('') : '');
+
+  /* Ответ, обрезанный по лимиту токенов, — это половина таблицы бланка.
+     Раньше он падал безымянной ошибкой разбора JSON. */
+  if (choice?.finish_reason === 'length') {
+    throw new Error('Ответ модели оборвался на середине — в бланке слишком много строк. Сними его двумя кадрами или возьми модель помощнее.');
+  }
+  if (!text.trim()) throw new Error('Модель вернула пустой ответ');
   return { text, usage: j.usage || null, modelUsed: j.model || model };
 }
 
@@ -178,7 +210,7 @@ export async function analyzeDocument(dataUrl, { model, signal } = {}) {
     model: use,
     schema: DOC_SCHEMA,
     temperature: 0,
-    maxTokens: 4000,
+    maxTokens: 12000,   // плотный бланк — это 60+ строк таблицы, на 4000 ответ обрывался
     signal,
     messages: [{
       role: 'user',

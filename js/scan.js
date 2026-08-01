@@ -4,6 +4,14 @@
 import { icon } from './icons.js';
 import { toast } from './ui.js';
 
+const kadr = (n) => {
+  const x = n % 100, y = x % 10;
+  if (x > 10 && x < 20) return 'кадров';
+  if (y === 1) return 'кадр';
+  if (y > 1 && y < 5) return 'кадра';
+  return 'кадров';
+};
+
 export async function scan() {
   let stream;
   try {
@@ -59,7 +67,7 @@ export async function scan() {
         }
         const sharp = n ? acc / n : 0;
         tag.textContent = sharp > 9 ? 'в фокусе' : 'подвинь ближе или дай больше света';
-        tag.style.color = sharp > 9 ? '#FEDE34' : 'rgba(255,255,255,.8)';
+        tag.style.color = sharp > 9 ? '#3DD183' : 'rgba(255,255,255,.8)';
       }
       raf = requestAnimationFrame(tick);
     }
@@ -78,14 +86,15 @@ export async function scan() {
       const cv = document.createElement('canvas');
       cv.width = video.videoWidth; cv.height = video.videoHeight;
       cv.getContext('2d').drawImage(video, 0, 0);
+      if (!cv.width || !cv.height) { toast('Камера ещё не готова — секунду'); return; }
       const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92));
-      if (!blob) return;
+      if (!blob) { toast('Кадр не получился, сними ещё раз'); return; }
       const file = new File([blob], `скан-${shots.length + 1}.jpg`, { type: 'image/jpeg' });
       shots.push(file);
-      wrap.querySelector('#scanCount').textContent = `${shots.length} ${shots.length === 1 ? 'кадр' : 'кадра'}`;
+      wrap.querySelector('#scanCount').textContent = `${shots.length} ${kadr(shots.length)}`;
       // отклик: короткая вспышка рамки
       const fr = wrap.querySelector('.scan-frame');
-      fr.style.borderColor = '#FEDE34';
+      fr.style.borderColor = '#3DD183';
       setTimeout(() => (fr.style.borderColor = 'rgba(255,255,255,.85)'), 160);
       if (navigator.vibrate) navigator.vibrate(12);
 

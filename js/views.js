@@ -32,7 +32,7 @@ export function summary(app) {
   const ready = S.state.docs.filter(d => d.status === 'ready');
   const span = S.yearsSpan();
   const queue = S.state.docs.filter(d => ['queued', 'reading'].includes(d.status)).length;
-  const needsAttention = S.state.docs.filter(d => ['needs-date', 'error', 'skipped', 'duplicate'].includes(d.status)).length;
+  const needsAttention = S.state.docs.filter(d => ['needs-date', 'error', 'skipped', 'duplicate', 'foreign'].includes(d.status)).length;
 
   if (!ready.length && !queue) {
     return head('BioLens', '') + emptyBlock('camera', 'Начни с того, что есть',
@@ -246,7 +246,7 @@ export function markerDetail(app) {
     ${gradeScale(last.value, MARKERS[key]?.grades)}
     <div class="sm" style="margin-top:12px;line-height:1.5">${last.refLow != null || last.refHigh != null
         ? `Норма <b>${esc(S.fmtRef(last))} ${esc(unit)}</b> — ${last.refSource === 'типовая'
-            ? 'типовая для взрослых, в бланке границ не было'
+            ? `в бланке границ не было, взял типовую для взрослых${MARKERS[key]?.refBySex ? ` (${db.settings().sex === 'f' ? 'женских' : 'мужских'} — пол меняется в настройках)` : ''}`
             : `так написано в бланке${last.lab ? ' ' + esc(last.lab) : ''}`}`
         : 'Границы нормы в бланке не указаны — сказать «много» или «мало» не по чему'}</div>
   </div>`;
@@ -397,7 +397,7 @@ export function timeline(app) {
   const shown = all.filter(inKind);
 
   // документы, которым нужно внимание, показываем отдельно и всегда — они не должны теряться
-  const pending = shown.filter(d => ['queued', 'reading', 'needs-date', 'error', 'skipped', 'duplicate'].includes(d.status));
+  const pending = shown.filter(d => ['queued', 'reading', 'needs-date', 'error', 'skipped', 'duplicate', 'foreign'].includes(d.status));
   const done = shown.filter(d => d.status === 'ready');
 
   const ready = all.filter(d => d.status === 'ready').length;
@@ -455,6 +455,7 @@ const STATUS_BADGE = {
   error:       ['не прочитал', null],
   skipped:     ['не медицинский', 'ничего не сохранил'],
   duplicate:   ['дубль', 'такой документ уже есть'],
+  foreign:     ['чужое имя', 'в бланке другой пациент'],
 };
 
 function docRow(d, showBadge) {
@@ -542,6 +543,19 @@ export function docView(app) {
       <button class="mini" data-act="undup" data-id="${esc(doc.id)}">Всё равно учесть</button></div></div>`;
   }
 
+  /* Чужой бланк. Архив рассчитан на одного человека: числа родственника,
+     влившись в твои линии, тихо испортят всю картину. */
+  if (doc.status === 'foreign') {
+    html += `<div class="card note">
+      <div class="row">${icon('warning', 'ico s')}<div class="grow"><div class="nm" style="font-size:14px">В бланке другое имя</div></div></div>
+      <div class="sm" style="margin:8px 0 11px;line-height:1.5">Здесь написано <b>${esc(doc.patientName || 'другое имя')}</b>, а в остальном архиве — другой человек. Числа сохранил, но в твои линии не поставил: смешивать анализы разных людей нельзя.</div>
+      <div class="chips">
+        <button class="chip on" data-act="mine" data-id="${esc(doc.id)}">Это мои анализы</button>
+        <button class="chip" data-act="del-doc" data-id="${esc(doc.id)}">Удалить документ</button>
+      </div>
+    </div>`;
+  }
+
   if (doc.conclusion) {
     html += `<div class="card"><div class="cap" style="padding:0 0 8px">Заключение</div>
       <div class="sm" style="font-size:14px;line-height:1.55;color:var(--ink)">${esc(doc.conclusion)}</div></div>`;
@@ -583,7 +597,7 @@ export function docView(app) {
 
 export function inbox(app) {
   const q = S.state.docs.filter(d => ['queued', 'reading'].includes(d.status));
-  const problems = S.state.docs.filter(d => ['needs-date', 'error', 'skipped', 'duplicate'].includes(d.status));
+  const problems = S.state.docs.filter(d => ['needs-date', 'error', 'skipped', 'duplicate', 'foreign'].includes(d.status));
   const recent = S.state.docs.filter(d => d.status === 'ready').slice(0, 6);
 
   let html = backHead('Разбор', q.length ? `${S.state.queue.done} из ${S.state.queue.total || q.length}` : `${problems.length} требуют внимания`);
@@ -606,6 +620,7 @@ export function inbox(app) {
       'error': ['Не смог прочитать', d.error || ''],
       'skipped': ['Похоже, это не медицинский документ', 'Ничего не сохранил'],
       'duplicate': ['Дубль', 'Такой же документ за эту дату уже есть'],
+      'foreign': ['В бланке другое имя', 'Числа не попали в линии — открой и подтверди, что это твоё'],
     }[d.status];
     html += `<div class="card">
       <div class="row">
@@ -960,11 +975,13 @@ export function settingsView(app) {
       <button class="mini" data-act="reparse">Запустить</button></div>
   </div>`;
 
+  // состояние берём из самих данных: флаг в app успевал устареть после автоочистки
+  const demoOn = S.state.docs.some(d => d.demo);
   html += `<div class="card flat">
     <div class="row">${icon('sparkle', 'ico s')}
       <div class="grow"><div class="nm" style="font-size:14px">Демонстрационный архив</div>
-        <div class="sm">${app.hasDemo ? 'Сейчас в приложении есть демо-документы' : '12 документов за 10 лет — посмотреть, как всё выглядит с данными'}</div></div>
-      <button class="mini" data-act="${app.hasDemo ? 'demo-clear' : 'demo-fill'}">${app.hasDemo ? 'Убрать' : 'Показать'}</button></div>
+        <div class="sm">${demoOn ? 'Сейчас в приложении есть демо-документы' : '12 документов за 10 лет — посмотреть, как всё выглядит с данными'}</div></div>
+      <button class="mini" data-act="${demoOn ? 'demo-clear' : 'demo-fill'}">${demoOn ? 'Убрать' : 'Показать'}</button></div>
   </div>`;
 
   html += `<div class="cap">Профиль</div>
@@ -1037,9 +1054,25 @@ export function settingsView(app) {
     </div>
   </div>`;
 
+  // место на устройстве: архив снимков растёт быстро, а вытеснение хранилища тихое
+  const st = app.storage;
+  if (st) {
+    const full = st.quotaMb ? st.usedMb / st.quotaMb : 0;
+    html += `<div class="card">
+      <div class="row"><div class="grow"><div class="nm" style="font-size:14px">Место на устройстве</div>
+        <div class="sm">${st.usedMb} МБ занято${st.quotaMb ? ` из ${st.quotaMb} МБ` : ''}</div></div></div>
+      <div class="prog" style="margin-top:10px"><i style="width:${Math.min(100, Math.round(full * 100))}%;${full > 0.8 ? 'background:var(--bad-dot)' : ''}"></i></div>
+      <div class="sm" style="margin-top:9px;line-height:1.5">${st.persisted
+        ? 'Архив помечен как постоянный — браузер не сотрёт его, освобождая место.'
+        : 'Браузер <b>не дал</b> пометить архив постоянным: при нехватке места он может его стереть. Держи копию файлом.'}</div>
+      ${full > 0.8 ? `<div class="sm" style="margin-top:8px;color:var(--bad)">Места почти нет — сохрани копию файлом и удали лишние документы.</div>` : ''}
+    </div>`;
+  }
+
   html += `<div class="card">
     <div class="sm" style="line-height:1.6">
       <b>Что уходит наружу:</b> когда я разбираю снимок или отвечаю на вопрос, картинка и выжимка данных уходят в OpenRouter выбранной тобой модели — иначе разбора не будет. В остальное время данные не покидают устройство и твоё облако Телеграма.
+      <br><br><b>Про бесплатные модели:</b> у них другая политика — площадка вправе хранить запросы и использовать их для обучения. Это медицинские документы: если это важно, бери платную модель.
     </div>
     <div class="divide"></div>
     <div class="row" style="flex-wrap:wrap;gap:8px">

@@ -124,7 +124,10 @@ document.addEventListener('click', async (e) => {
   switch (act) {
     case 'back': back(); break;
     case 'tab': go(el.dataset.tab); break;
-    case 'settings': go('settings'); break;
+    case 'settings':
+      go('settings');
+      db.storageInfo().then(info => { if (info) { app.storage = info; if (app.route === 'settings') render(); } });
+      break;
     case 'inbox': go('inbox'); break;
     case 'due': go('due'); break;
     case 'doctor': go('doctor'); break;
@@ -169,6 +172,10 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'pick-date': pickDate(el.dataset.id); break;
+    case 'mine': {
+      if (await S.confirmPatient(el.dataset.id)) { toast('Учёл в твоих линиях'); render(); }
+      break;
+    }
     case 'undup': {
       const d = S.state.docs.find(x => x.id === el.dataset.id);
       if (d) { d.status = 'queued'; d.duplicateOf = null; await db.put('docs', d); render(); runQueue(); }
@@ -356,6 +363,8 @@ async function doScan() {
 async function intake(files) {
   const s = db.settings();
   if (!s.onboarded) db.saveSettings({ onboarded: true });
+  // пример и настоящий архив не должны стоять в одних линиях (сама чистка — в store)
+  if (hasDemo()) { app.hasDemo = false; toast('Убрал демо-пример — дальше только твои документы'); }
   const hasPdf = files.some(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name || ''));
   if (hasPdf) toast('Разбираю PDF на страницы…');
   const added = await S.addFiles(files, {
@@ -550,10 +559,11 @@ function pickDate(docId) {
   const doc = S.state.docs.find(d => d.id === docId);
   const s = sheet(`<h2>Дата документа</h2>
     <p class="sm" style="margin:8px 0 14px">Дата забора или исследования — по ней показатель встанет в линию.</p>
-    <input type="date" id="dateInput" value="${doc?.fileDate || ''}">
+    <input type="date" id="dateInput" value="${doc?.fileDate || ''}" max="${new Date().toISOString().slice(0, 10)}">
     <button class="btn" data-ok style="margin-top:14px">Поставить</button>`);
   s.root.querySelector('[data-ok]').onclick = async () => {
     const v = s.root.querySelector('#dateInput').value;
+    if (v > new Date().toISOString().slice(0, 10)) { toast('Дата из будущего — так не бывает'); return; }
     if (v) { await S.setDocDate(docId, v); toast('Дата поставлена'); }
     s.close(); render();
   };
@@ -597,7 +607,19 @@ async function importAll() {
     }
   }
 
-  await db.open();
+  /* Без хранилища приложение бессмысленно — молчать об этом нельзя.
+     Так бывает в приватном режиме браузера и при жёстких настройках приватности. */
+  try {
+    await db.open();
+  } catch (e) {
+    document.querySelector('#view').innerHTML = `
+      <div class="empty"><div class="t">Не могу открыть хранилище</div>
+        <div class="d">Браузер не даёт сохранять данные на этом устройстве — так бывает в режиме инкогнито
+        и при полном запрете хранилища для сайтов. Архив анализов без него вести нельзя.<br><br>
+        Открой BioLens в обычном окне или разреши сайту хранить данные.</div></div>`;
+    return;
+  }
+  db.requestPersistence();   // просим не вытеснять архив при нехватке места
   await S.loadAll();
 
   // ключ и модель могли остаться в облаке Телеграма с прошлого устройства

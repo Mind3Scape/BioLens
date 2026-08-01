@@ -26,7 +26,18 @@ export async function loadAll() {
 
 /* ── приём файлов ────────────────────────────────────────────── */
 
+/* Демонстрационный архив исчезает, как только появляется первый настоящий файл.
+   Живёт здесь, а не в demo.js, чтобы срабатывать на ЛЮБОМ пути добавления. */
+export async function dropDemo() {
+  const docs = state.docs.filter(d => d.demo);
+  const meals = state.meals.filter(m => m.demo);
+  for (const d of docs) await deleteDoc(d.id);
+  for (const m of meals) await deleteMeal(m.id);
+  return docs.length + meals.length;
+}
+
 export async function addFiles(files, { onProgress } = {}) {
+  if (files.length) await dropDemo();
   const added = [];
   for (const f of files) {
     const pdf = isPdf(f);
@@ -140,7 +151,39 @@ export async function processQueue(onTick, { model } = {}) {
   return state.queue;
 }
 
-async function applyDocResult(doc, data, modelUsed) {
+/* Имя пациента с бланка. Приложение хранит архив ОДНОГО человека: если
+   сфотографировать бланк жены или родителя, его числа молча встанут в твои
+   линии и испортят всю картину. Имя из бланка модель читает всегда — здесь
+   мы им наконец пользуемся. */
+const nameKey = (s) => (s || '').toLowerCase()
+  .replace(/ё/g, 'е').replace(/[^а-яa-z\s]/gi, ' ').replace(/\s+/g, ' ').trim()
+  .split(' ').filter(w => w.length > 1).slice(0, 2).sort().join(' ');
+
+/* Чьё имя чаще всего встречается в архиве — тот и владелец.
+   Разбираемый прямо сейчас документ из подсчёта исключаем: иначе первый же
+   чужой бланк объявит владельцем себя и проверка станет бессмысленной. */
+export function archiveOwner(exceptDocId = null) {
+  const count = new Map();
+  for (const d of state.docs) {
+    if (d.id === exceptDocId) continue;
+    if (!['ready', 'needs-date', 'duplicate'].includes(d.status)) continue;
+    const k = nameKey(d.patientName);
+    if (!k) continue;
+    count.set(k, (count.get(k) || 0) + 1);
+  }
+  let best = null;
+  for (const [k, n] of count) if (!best || n > best.n) best = { key: k, n };
+  return best;
+}
+
+function looksForeign(doc) {
+  const mine = archiveOwner(doc.id);
+  const theirs = nameKey(doc.patientName);
+  if (!mine || !theirs) return false;          // сравнивать не с чем — не мешаем
+  return mine.key !== theirs;
+}
+
+async function applyDocResult(doc, data, modelUsed, { trustPatient = false } = {}) {
   doc.model = modelUsed || null;
   doc.raw = data;
 
@@ -164,11 +207,21 @@ async function applyDocResult(doc, data, modelUsed) {
   if (!date) { doc.status = 'needs-date'; doc.date = null; }
   else { doc.date = date; doc.status = 'ready'; }
 
-  // дубль: тот же тип, та же дата, столько же показателей
-  const dup = state.docs.find(d => d.id !== doc.id && d.date && d.date === doc.date && d.type === doc.type && d.status === 'ready');
-  if (dup && (data.markers || []).length && dup.markersCount === (data.markers || []).length) {
+  /* Дубль — только если совпал СОСТАВ, а не количество строк. Раньше два разных
+     анализа одного дня с одинаковым числом строк объявлялись дублем, и данные
+     второго молча пропадали. */
+  doc.markerSig = markerSignature(data.markers);
+  const dup = state.docs.find(d => d.id !== doc.id && d.date && d.date === doc.date
+    && d.status === 'ready' && d.markerSig && d.markerSig === doc.markerSig);
+  if (dup && (data.markers || []).length) {
     doc.status = 'duplicate';
     doc.duplicateOf = dup.id;
+  }
+
+  // чужой бланк не должен молча влиться в архив
+  if (doc.status === 'ready' && !trustPatient && !doc.patientConfirmed && looksForeign(doc)) {
+    doc.status = 'foreign';
+    doc.foreignOf = archiveOwner(doc.id)?.key || null;
   }
 
   doc.markersCount = (data.markers || []).length;
@@ -180,7 +233,8 @@ async function applyDocResult(doc, data, modelUsed) {
   state.meas = state.meas.filter(m => m.docId !== doc.id);
   touch();
 
-  if (doc.status === 'duplicate') return;
+  // дубль и чужой бланк в линии не попадают: числа остаются в документе, но не в графиках
+  if (doc.status === 'duplicate' || doc.status === 'foreign') return;
 
   const sex = db.settings().sex;
   /* Два разных названия из ОДНОГО бланка не могут быть одним показателем.
@@ -199,7 +253,15 @@ async function applyDocResult(doc, data, modelUsed) {
     } else {
       takenKeys.set(key, rawName.toLowerCase());
     }
-    const conv = hit ? toCanonical(key, raw.value, raw.unit) : { value: Number(raw.value), unit: raw.unit || '', converted: false, factor: 1 };
+    let conv = hit ? toCanonical(key, raw.value, raw.unit) : { value: Number(raw.value), unit: raw.unit || '', converted: false, factor: 1 };
+
+    /* Единица, которой нет в таблице пересчёта, — самая тихая из возможных бед:
+       ферритин в нг/дл встал бы в одну линию с нг/мл и нарисовал падение в десять
+       раз. Такой замер живёт отдельной линией, пока единицу не научимся считать. */
+    if (hit && conv.unknownUnit) {
+      key = `raw:${key}|${(raw.unit || '').toLowerCase().trim()}`;
+      conv = { value: Number(raw.value), unit: raw.unit || '', converted: false, factor: 1, unknownUnit: true };
+    }
 
     let refLow = raw.ref_low, refHigh = raw.ref_high;
     if (hit && conv.factor !== 1) {
@@ -214,7 +276,8 @@ async function applyDocResult(doc, data, modelUsed) {
 
     const rec = {
       id: db.uid('m'), docId: doc.id, key,
-      nameRaw: raw.name || '', title: hit ? markerTitle(key) : (raw.name || ''),
+      nameRaw: raw.name || '',
+      title: conv.unknownUnit && hit ? `${markerTitle(hit.key)} (${raw.unit})` : (hit ? markerTitle(key) : (raw.name || '')),
       value: conv.value, unit: conv.unit || raw.unit || '',
       rawValue: Number(raw.value), rawUnit: raw.unit || '',
       converted: !!conv.converted, unknownUnit: !!conv.unknownUnit,
@@ -271,12 +334,47 @@ function mergedTitle(pages) {
   return heads.length === 1 ? heads[0] : titles[0];
 }
 
+/* Состав бланка: по нему отличаем настоящий дубль от другого анализа того же дня. */
+function markerSignature(markers) {
+  const list = (markers || [])
+    .map(m => `${(m.name || '').toLowerCase().trim()}=${m.value}`)
+    .sort();
+  return list.length ? list.join(';') : null;
+}
+
+/* Дата должна существовать в календаре и не быть из будущего.
+   Модель иногда читает 2062 вместо 2026 или 31.02 — такая дата уводит показатель
+   в конец линии и объявляет его «последним замером». Лучше честно спросить. */
+function validDay(iso) {
+  const [y, mo, d] = iso.split('-').map(Number);
+  if (!y || !mo || !d) return false;
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return false;
+  if (y < 1950) return false;
+  return dt.getTime() <= Date.now() + 2 * 86400000;   // запас на часовые пояса
+}
+
 function normDate(s) {
   if (!s) return null;
   const m = String(s).match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  if (m) {
+    const iso = `${m[1]}-${m[2]}-${m[3]}`;
+    return validDay(iso) ? iso : null;
+  }
   const y = String(s).match(/(19|20)\d{2}/);
-  return y ? `${y[0]}-01-01` : null;
+  if (!y) return null;
+  const iso = `${y[0]}-01-01`;
+  return validDay(iso) ? iso : null;
+}
+
+/* «Да, это мои анализы» — разбираем сохранённый ответ модели заново,
+   уже не спрашивая про имя. Второго обращения к модели не требуется. */
+export async function confirmPatient(docId) {
+  const doc = state.docs.find(d => d.id === docId);
+  if (!doc?.raw) return false;
+  doc.patientConfirmed = true;
+  await applyDocResult(doc, doc.raw, doc.model, { trustPatient: true });
+  return true;
 }
 
 export async function setDocDate(docId, date) {
@@ -337,8 +435,13 @@ export function invalidate() { cache.rev = -1; }
 function allSeries() {
   if (cache.rev === state.rev && cache.series) return cache.series;
   const map = new Map();
+  /* Как только появился хоть один настоящий замер, демонстрационные числа
+     из линий исчезают. Смешанная история — выдуманные значения вперемешку
+     с настоящими — хуже, чем отсутствие истории вообще. */
+  const hasReal = state.meas.some(m => !m.demo);
   for (const m of state.meas) {
     if (!m.date) continue;
+    if (hasReal && m.demo) continue;
     if (!map.has(m.key)) map.set(m.key, []);
     map.get(m.key).push({ ...m, status: statusOf(m.value, m.refLow, m.refHigh) });
   }
@@ -500,6 +603,7 @@ export function foodGoal() {
 /* ── еда ─────────────────────────────────────────────────────── */
 
 export async function addMeal(file, { model } = {}) {
+  await dropDemo();
   const blobId = db.uid('b');
   const small = await db.shrinkImage(file, 1200, 0.82);
   await db.putBlob(blobId, small);
@@ -577,7 +681,10 @@ export function dayTargets() {
 
 /* ── контекст для ИИ ─────────────────────────────────────────── */
 
-export function buildContext({ maxMarkers = 40 } = {}) {
+/* 120 показателей — это около 12 КБ текста, для любой современной модели пустяк.
+   Прежние 40 молча обрезали архив, и на вопрос «какой у меня гемоглобин»
+   модель отвечала «таких данных нет», хотя данные есть. */
+export function buildContext({ maxMarkers = 120 } = {}) {
   const s = db.settings();
   const age = new Date().getFullYear() - (s.birthYear || 1990);
   const lines = [];
@@ -588,6 +695,10 @@ export function buildContext({ maxMarkers = 40 } = {}) {
   for (const m of markerList().slice(0, maxMarkers)) {
     const hist = m.series.map(p => `${p.date}: ${p.value}`).join('; ');
     lines.push(`- ${m.title} [${m.unit}] норма ${fmtRef(m.last)} (${m.last.refSource || 'нет'}). Сейчас ${m.last.value} (${ruStatus(m.status)}), замеров ${m.count}. История: ${hist}`);
+  }
+  const total = markerList().length;
+  if (total > maxMarkers) {
+    lines.push(`(показаны ${maxMarkers} из ${total} — остальные есть в архиве, просто не поместились сюда)`);
   }
   const concl = state.docs.filter(d => d.conclusion).slice(0, 8);
   if (concl.length) {
