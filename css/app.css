@@ -40,10 +40,13 @@ html[data-theme="dark"] body{
 #app{height:100%;display:flex;flex-direction:column;max-width:640px;margin:0 auto;position:relative}
 html.tg,html.tg body{height:var(--tg-height,100%)}
 html.tg #app{height:var(--tg-height,100%)}
-/* сверху — полоса с кнопками Телеграма, снизу — его же панель */
-html.tg #view{padding-top:calc(22px + var(--tg-top, 0px));padding-bottom:calc(132px + var(--tg-bottom, 0px))}
-html.tg .tabs{padding-bottom:calc(10px + var(--safe-b) + var(--tg-bottom, 0px))}
-html.tg .toast{bottom:calc(100px + var(--safe-b) + var(--tg-bottom, 0px))}
+/* В Телеграме про нижний край экрана знает сам клиент: он уже поднял окно над
+   индикатором. Поэтому системный env-отступ здесь обнуляем и слушаем только
+   инсеты Телеграма — иначе док повисает высоко над краем. */
+html.tg{--safe-b:0px}
+html.tg #view{padding-top:calc(22px + var(--tg-top, 0px));padding-bottom:calc(120px + var(--tg-bottom, 0px))}
+html.tg .tabs{padding-bottom:calc(8px + var(--tg-bottom, 0px))}
+html.tg .toast{bottom:calc(92px + var(--tg-bottom, 0px))}
 #view{flex:1;overflow-y:auto;overflow-x:hidden;padding:14px 16px 120px;-webkit-overflow-scrolling:touch}
 #view::-webkit-scrollbar{width:0}
 
