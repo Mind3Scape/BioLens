@@ -2,7 +2,7 @@
    Здесь же — сборка контекста для ИИ и связка «анализы ↔ еда». */
 
 import * as db from './db.js';
-import { matchMarker, toCanonical, defaultRef, markerTitle, markerUnit, markerGroup, statusOf, MARKERS, RCV, RECHECK } from './markers.js';
+import { matchMarker, toCanonical, defaultRef, markerTitle, markerUnit, markerGroup, statusOf, MARKERS, RCV, RECHECK, NO_RECHECK, UNIT_SPLIT } from './markers.js';
 import { analyzeDocument, analyzeMeal } from './openrouter.js';
 import { isPdf, pdfToImages } from './pdfdoc.js';
 
@@ -280,6 +280,10 @@ async function applyDocResult(doc, data, modelUsed, { trustPatient = false } = {
     } else {
       takenKeys.set(key, rawName.toLowerCase());
     }
+    // единица может переводить показатель в его «двойник» с другой шкалой
+    const uNorm = (raw.unit || '').toLowerCase().replace(/\s/g, '');
+    if (hit && UNIT_SPLIT[key]?.[uNorm]) key = UNIT_SPLIT[key][uNorm];
+
     let conv = hit ? toCanonical(key, raw.value, raw.unit) : { value: Number(raw.value), unit: raw.unit || '', converted: false, factor: 1 };
 
     /* Единица, которой нет в таблице пересчёта, — самая тихая из возможных бед:
@@ -591,8 +595,9 @@ export function shifts(limit = 3) {
       return { ...m, base, change, gapDays, sig };
     })
     .filter(m => m.gapDays >= MIN_GAP_DAYS)
-    .filter(m => m.sig?.significant !== false)
-    .filter(m => Math.abs(m.change) > 0.08)
+    /* Есть порог из базы — сверяемся с ним. Нет порога (Лп(а), СОЭ, свои строки
+       из бланка) — требуем заметного сдвига, иначе шум объявлялся динамикой. */
+    .filter(m => m.sig?.rcv != null ? m.sig.significant === true : Math.abs(m.change) > 0.2)
     .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
     .slice(0, limit);
 }
@@ -631,7 +636,7 @@ export function labsIn(series) {
 
 /* Что пора пересдать — сроки из рекомендаций, где они есть */
 export function dueList() {
-  return markerList().map(m => {
+  return markerList().filter(m => !NO_RECHECK.includes(m.key)).map(m => {
     const rule = RECHECK[m.key];
     const bad = m.status === 'out' || m.status === 'edge';
     const months = rule ? (bad ? rule.bad : rule.ok) : (bad ? 6 : 12);

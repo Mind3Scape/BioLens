@@ -264,6 +264,10 @@ export function markerDetail(app) {
           <div class="sm" style="font-size:14px;line-height:1.55;color:var(--ink)">${esc(ref.what)}</div>
         </div>
       </div>
+      ${!open && st === 'out' && ref.redFlag ? `
+        <div class="divide"></div>
+        <div class="row" style="align-items:flex-start">${icon('warning', 'ico s')}
+          <div class="grow sm" style="line-height:1.55">${esc(ref.redFlag)}</div></div>` : ''}
       ${open ? `
         <div class="divide"></div>
         <div class="cap" style="padding:0 0 5px">Почему бывает выше</div>
@@ -841,6 +845,8 @@ export function ask(app) {
 
   html += msgs.map(m => `<div class="bubble ${m.role === 'user' ? 'me' : 'ai'}">${esc(m.text)}</div>`).join('');
   if (app.asking) html += `<div class="bubble ai"><div class="row"><div class="spin"></div><span class="sm">думаю…</span></div></div>`;
+  // именно здесь человек спрашивает «что у меня?» — молчать об ограничениях нельзя
+  html += `<div class="disc">Отвечаю только по числам из твоего архива. Это не приём врача: диагнозов не ставлю и лечение не назначаю. Если сейчас плохо — одышка, боль, спутанность — это вопрос к скорой, а не к приложению.</div>`;
 
   html += `<div class="composer">
     <input type="text" id="askInput" placeholder="Спроси о своей истории…" style="flex:1">
@@ -1161,8 +1167,8 @@ export function onboarding(app) {
     <div class="card">
       <label class="lab">Пол — нормы в анализах разные</label>
       <div class="segs" style="margin-bottom:14px">
-        <button class="seg ${s.sex !== 'f' ? 'on' : ''}" data-act="sex" data-v="m">Мужской</button>
-        <button class="seg ${s.sex === 'f' ? 'on' : ''}" data-act="sex" data-v="f">Женский</button>
+        <button class="seg ${s.sexSet && s.sex !== 'f' ? 'on' : ''}" data-act="sex" data-v="m">Мужской</button>
+        <button class="seg ${s.sexSet && s.sex === 'f' ? 'on' : ''}" data-act="sex" data-v="f">Женский</button>
       </div>
       <div class="row" style="gap:10px">
         <div class="grow"><label class="lab">Год рождения</label><input type="number" id="birthYear" value="${s.birthYear}"></div>
@@ -1170,7 +1176,8 @@ export function onboarding(app) {
         <div class="grow"><label class="lab">Вес, кг</label><input type="number" id="weightKg" value="${s.weightKg}"></div>
       </div>
     </div>
-    <button class="btn" data-act="ob-next">Дальше</button>
+    <button class="btn" data-act="ob-next" ${s.sexSet ? '' : 'disabled'}>Дальше</button>
+    ${s.sexSet ? '' : '<div class="sm" style="text-align:center;margin-top:9px">Выбери пол — от него зависят границы нормы у половины показателей</div>'}
     <div class="disc">Эти данные нужны только для границ нормы и остаются на устройстве.</div>`;
   }
 

@@ -325,9 +325,11 @@ export function gradeScale(value, grades) {
   return `<div style="margin-top:14px;border-radius:14px;overflow:hidden;border:1px solid var(--hair)">
     ${grades.map((g, i) => {
       const on = i === activeIdx;
-      const range = g.to != null
+      // r — подпись диапазона вручную: там, где верхняя граница включающая
+      // («1–3», а не «1–3.001»), автоматическая подпись врёт
+      const range = g.r || (g.to != null
         ? (i === 0 ? `до ${trim(g.to)}` : `${trim(grades[i - 1].to)}–${trim(g.to)}`)
-        : `выше ${trim(grades[grades.length - 2]?.to ?? '')}`;
+        : `выше ${trim(grades[grades.length - 2]?.to ?? '')}`);
       const tone = g.tone || 'ok';
       const c = tone === 'out' ? 'var(--bad)' : tone === 'edge' ? 'var(--edge)' : 'var(--ok)';
       const dot = tone === 'out' ? 'var(--bad-dot)' : tone === 'edge' ? 'var(--edge-dot)' : 'var(--ok-dot)';

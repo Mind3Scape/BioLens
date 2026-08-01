@@ -135,6 +135,7 @@ const defaults = {
   modelChat: 'google/gemini-2.5-flash',
   profileName: 'Я',
   sex: 'm',
+  sexSet: false,     // пол не выбран явно: подставлять мужские нормы молча нельзя
   birthYear: 1988,
   heightCm: 182,
   weightKg: 79,

@@ -286,7 +286,7 @@ async function handleAction(el) {
       }
       break;
     }
-    case 'sex': db.saveSettings({ sex: el.dataset.v }); render(); break;
+    case 'sex': db.saveSettings({ sex: el.dataset.v, sexSet: true }); render(); break;
     case 'theme': db.saveSettings({ theme: el.dataset.v }); render(); break;
     case 'save-profile': {
       db.saveSettings({
