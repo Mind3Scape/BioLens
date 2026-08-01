@@ -35,7 +35,7 @@ export function summary(app) {
 
   if (!ready.length && !queue) {
     return head('BioLens', '') + emptyBlock('camera', 'Начни с того, что есть',
-      'Открой галерею и <b>закинь всё подряд</b> — старые скриншоты анализов, фото бланков, PDF из лаборатории. Разберусь сам: год, лабораторию, показатели. Даже <b>пять картинок</b> уже дадут первую линию.',
+      'Закинь всё подряд — скриншоты анализов, фото бланков и <b>PDF из лаборатории</b>. Страницы PDF разберу по очереди прямо на телефоне. Даже <b>пять документов</b> уже дадут первую линию.',
       `<button class="btn" data-act="add">${icon('camera', 'ico s')}Закинуть скриншоты</button>
        <button class="btn ghost" data-act="scan" style="margin-top:10px">${icon('camera', 'ico s')}Снять бланк камерой</button>`);
   }
@@ -265,49 +265,64 @@ export function markerDetail(app) {
 /* ══ ХРОНИКА ═════════════════════════════════════════════════ */
 
 export function timeline(app) {
-  const docs = S.state.docs.filter(d => ['ready', 'needs-date', 'duplicate'].includes(d.status));
-  if (!docs.length) {
+  const all = S.state.docs;
+  if (!all.length) {
     return head('Хроника', '') + emptyBlock('calendar', 'Здесь будет твоя история',
-      'Анализы, снимки, заключения врачей — по годам, в одном месте.',
+      'Анализы, снимки, заключения врачей и PDF из лаборатории — всё по годам, в одном месте.',
       `<button class="btn" data-act="add">Закинуть документы</button>`);
   }
+
   const filter = app.docFilter || 'all';
-  const kinds = { all: 'Всё', blood: 'Анализы', imaging: 'Снимки', conclusion: 'Заключения', vaccination: 'Прививки' };
-  const shown = filter === 'all' ? docs : docs.filter(d => d.type === filter || (filter === 'blood' && d.type === 'urine'));
+  const kinds = { all: 'Всё', blood: 'Анализы', imaging: 'Снимки', conclusion: 'Заключения', other: 'Другое' };
+  const inKind = (d) => {
+    if (filter === 'all') return true;
+    if (filter === 'blood') return ['blood', 'urine'].includes(d.type);
+    if (filter === 'imaging') return d.type === 'imaging';
+    if (filter === 'conclusion') return d.type === 'conclusion';
+    return !['blood', 'urine', 'imaging', 'conclusion'].includes(d.type);   // «Другое» ловит всё остальное
+  };
+  const shown = all.filter(inKind);
 
-  const byYear = {};
-  for (const d of shown) {
-    const y = d.date ? d.date.slice(0, 4) : 'без даты';
-    (byYear[y] ||= []).push(d);
-  }
-  const years = Object.keys(byYear).sort((a, b) => b.localeCompare(a));
+  // документы, которым нужно внимание, показываем отдельно и всегда — они не должны теряться
+  const pending = shown.filter(d => ['queued', 'reading', 'needs-date', 'error', 'skipped', 'duplicate'].includes(d.status));
+  const done = shown.filter(d => d.status === 'ready');
 
-  let html = head('Хроника', `${docs.length} документов`, avatarBtn + addBtn);
+  const ready = all.filter(d => d.status === 'ready').length;
+  let html = head('Хроника', `${all.length} ${plural(all.length, 'файл', 'файла', 'файлов')} · разобрано ${ready}`, avatarBtn + addBtn);
   html += `<div class="segs scroll">${Object.entries(kinds).map(([k, t]) =>
     `<button class="seg ${filter === k ? 'on' : ''}" data-act="dfilter" data-kind="${k}">${esc(t)}</button>`).join('')}</div>`;
 
-  for (const y of years) {
-    html += `<div class="cap">${esc(y)}</div><div class="card list">`;
-    html += byYear[y].sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(d => {
-      const ms = S.state.meas.filter(m => m.docId === d.id);
-      const worst = ms.reduce((acc, m) => {
-        const s = m.refLow != null || m.refHigh != null ? (m.value < (m.refLow ?? -Infinity) || m.value > (m.refHigh ?? Infinity) ? 'out' : 'ok') : 'unknown';
-        return s === 'out' ? 'out' : (acc === 'out' ? 'out' : s);
-      }, 'unknown');
-      return `<div class="it" data-act="doc" data-id="${esc(d.id)}">
-        <div class="rnd" style="width:36px;height:36px;box-shadow:none;background:var(--field)">${icon(docIcon(d.type), 'ico s')}</div>
-        <div class="grow"><div class="nm">${esc(d.title || 'Документ')}</div>
-          <div class="sm">${d.date ? S.ruDate(d.date) : 'дата не разобрана'}${d.lab ? ' · ' + esc(d.lab) : ''}${ms.length ? ` · ${ms.length} ${plural(ms.length, 'показатель', 'показателя', 'показателей')}` : ''}</div></div>
-        ${d.status === 'duplicate' ? `<span class="mini">дубль</span>` : statusDot(worst === 'ok' ? 'ok' : worst)}
-      </div>`;
-    }).join('');
+  if (pending.length) {
+    html += `<div class="cap">Ждут тебя · ${pending.length}</div><div class="card list">`;
+    html += pending.map(d => docRow(d, true)).join('');
     html += `</div>`;
   }
 
-  // пробелы во времени
+  const byYear = {};
+  for (const d of done) {
+    const y = d.date ? d.date.slice(0, 4) : 'без даты';
+    (byYear[y] ||= []).push(d);
+  }
+  const years = Object.keys(byYear).sort((a, b) => {
+    if (a === 'без даты') return -1;
+    if (b === 'без даты') return 1;
+    return b.localeCompare(a);
+  });
+
+  for (const y of years) {
+    html += `<div class="cap">${esc(y)}</div><div class="card list">`;
+    html += byYear[y].sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(d => docRow(d, false)).join('');
+    html += `</div>`;
+  }
+
+  if (!shown.length) {
+    html += `<div class="card"><div class="sm" style="line-height:1.5">В этой группе пусто. Нажми «Всё» — там лежат все ${all.length} ${plural(all.length, 'файл', 'файла', 'файлов')}.</div></div>`;
+  }
+
+  // пробелы во времени — только когда есть на чём их считать
   const span = S.yearsSpan();
-  if (span) {
-    const have = new Set(docs.filter(d => d.date).map(d => d.date.slice(0, 4)));
+  if (span && filter === 'all') {
+    const have = new Set(all.filter(d => d.date).map(d => d.date.slice(0, 4)));
     const gaps = [];
     for (let y = +span.from.slice(0, 4); y <= +span.to.slice(0, 4); y++) if (!have.has(String(y))) gaps.push(y);
     if (gaps.length) {
@@ -320,8 +335,45 @@ export function timeline(app) {
   return html;
 }
 
-function docIcon(type) {
-  return { blood: 'drop', urine: 'drop', imaging: 'waves', conclusion: 'stethoscope', vaccination: 'firstaid' }[type] || 'file';
+const STATUS_BADGE = {
+  queued:      ['в очереди', 'ждёт разбора'],
+  reading:     ['читаю', 'сейчас разбираю'],
+  'needs-date':['нет даты', 'без даты не встанет в линию'],
+  error:       ['не прочитал', null],
+  skipped:     ['не медицинский', 'ничего не сохранил'],
+  duplicate:   ['дубль', 'такой документ уже есть'],
+};
+
+function docRow(d, showBadge) {
+  const ms = S.state.meas.filter(m => m.docId === d.id);
+  const worst = ms.reduce((acc, m) => {
+    const bad = (m.refLow != null && m.value < m.refLow) || (m.refHigh != null && m.value > m.refHigh);
+    return bad ? 'out' : (acc === 'out' ? 'out' : 'ok');
+  }, 'unknown');
+  const badge = STATUS_BADGE[d.status];
+  const parts = [
+    d.date ? S.ruDate(d.date) : (badge ? null : 'дата не разобрана'),
+    d.lab,
+    ms.length ? `${ms.length} ${plural(ms.length, 'показатель', 'показателя', 'показателей')}` : null,
+    d.isPdf ? `PDF · ${d.pageCount || (d.pages || []).length} ${plural(d.pageCount || 1, 'страница', 'страницы', 'страниц')}` : null,
+  ].filter(Boolean);
+  const sub = showBadge && badge
+    ? [badge[1] || d.error || '', esc(d.fileName || '')].filter(Boolean).join(' · ')
+    : parts.join(' · ');
+
+  return `<div class="it" data-act="doc" data-id="${esc(d.id)}">
+    <div class="rnd" style="width:36px;height:36px;box-shadow:none;background:var(--field)">${icon(docIcon(d.type, d.isPdf), 'ico s')}</div>
+    <div class="grow"><div class="nm">${esc(d.title || d.fileName || 'Документ')}</div>
+      <div class="sm">${esc(sub)}</div></div>
+    ${showBadge && badge
+      ? (['queued', 'reading'].includes(d.status) ? `<div class="spin"></div>` : `<span class="mini">${esc(badge[0])}</span>`)
+      : statusDot(worst)}
+  </div>`;
+}
+
+function docIcon(type, isPdf) {
+  const byType = { blood: 'drop', urine: 'drop', imaging: 'waves', conclusion: 'stethoscope', vaccination: 'firstaid' }[type];
+  return byType || (isPdf ? 'file' : 'file');
 }
 
 /* ══ ДОКУМЕНТ ════════════════════════════════════════════════ */
@@ -333,12 +385,18 @@ export function docView(app) {
   const doubts = ms.filter(m => m.confidence < 0.75);
 
   let html = backHead(doc.title || 'Документ',
-    [doc.date ? S.ruDate(doc.date) : 'дата не разобрана', doc.lab, ms.length ? `${ms.length} показателей` : null].filter(Boolean).join(' · '));
+    [doc.date ? S.ruDate(doc.date) : 'дата не разобрана', doc.lab,
+     ms.length ? `${ms.length} ${plural(ms.length, 'показатель', 'показателя', 'показателей')}` : null].filter(Boolean).join(' · '));
 
-  if (doc.blobId) {
-    html += `<div class="card" style="padding:12px"><img class="shot-big" data-blob="${esc(doc.blobId)}" alt="оригинал"/>
-      <div class="row" style="margin-top:10px"><div class="grow sm">${esc(doc.fileName || '')} · оригинал хранится всегда</div>
-      <button class="mini warn" data-act="del-doc" data-id="${esc(doc.id)}">Удалить</button></div></div>`;
+  const pages = (doc.pages && doc.pages.length) ? doc.pages : (doc.blobId ? [doc.blobId] : []);
+  if (pages.length) {
+    html += `<div class="card" style="padding:12px">
+      ${pages.map((b, i) => `<img class="shot-big" data-blob="${esc(b)}" alt="страница ${i + 1}" style="${i ? 'margin-top:8px' : ''}"/>`).join('')}
+      <div class="row" style="margin-top:10px"><div class="grow sm">${esc(doc.fileName || '')}${doc.isPdf ? ` · PDF, ${doc.pageCount || pages.length} ${plural(doc.pageCount || pages.length, 'страница', 'страницы', 'страниц')}` : ''} · оригинал хранится всегда</div>
+      <button class="mini warn" data-act="del-doc" data-id="${esc(doc.id)}">Удалить</button></div>
+      ${doc.pagesSkipped ? `<div class="sm" style="margin-top:8px">Разобрал первые ${pages.length} — остальные ${doc.pagesSkipped} пропустил, чтобы не тратить лишнего</div>` : ''}
+      ${doc.pageErrors ? `<div class="sm" style="margin-top:8px;color:var(--warn)">Страницы ${doc.pageErrors.map(e => e.page).join(', ')} прочитать не вышло: ${esc(doc.pageErrors[0].error)}</div>` : ''}
+    </div>`;
   } else {
     html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
       <div class="grow"><div class="nm" style="font-size:14px">Оригинал остался на прежнем устройстве</div>
@@ -412,8 +470,9 @@ export function inbox(app) {
 
   if (q.length) {
     const pct = S.state.queue.total ? Math.round(S.state.queue.done / S.state.queue.total * 100) : 5;
+    const rp = q[0].readingPage;
     html += `<div class="card"><div class="prog"><i style="width:${pct}%"></i></div>
-      <div class="sm" style="margin-top:10px">Читаю ${esc(q[0].fileName || 'документ')}… Можно закрыть приложение — допишу в фоне.</div></div>`;
+      <div class="sm" style="margin-top:10px">Читаю ${esc(q[0].fileName || 'документ')}${rp ? ` · страница ${rp.n} из ${rp.of}` : ''}… Можно закрыть приложение — допишу в фоне.</div></div>`;
   }
 
   if (!q.length && !problems.length && recent.length) {
@@ -425,13 +484,13 @@ export function inbox(app) {
     const kind = {
       'needs-date': ['Дата не читается', 'Без даты показатели не встают в линию'],
       'error': ['Не смог прочитать', d.error || ''],
-      'skipped': ['Не медицинский документ', 'Похоже на посторонний файл — ничего не сохранил'],
+      'skipped': ['Похоже, это не медицинский документ', 'Ничего не сохранил'],
       'duplicate': ['Дубль', 'Такой же документ за эту дату уже есть'],
     }[d.status];
     html += `<div class="card">
       <div class="row">
         <div class="thumb" style="width:44px;aspect-ratio:3/4"><img data-blob="${esc(d.blobId)}" alt=""></div>
-        <div class="grow"><div class="nm">${esc(kind[0])}</div><div class="sm">${esc(d.title || d.fileName || '')}${kind[1] ? ' · ' + esc(kind[1]) : ''}</div></div>
+        <div class="grow"><div class="nm">${esc(kind[0])}</div><div class="sm">${esc(d.fileName || d.title || '')}${kind[1] ? ' · ' + esc(kind[1]) : ''}</div></div>
         <button class="mini" data-act="doc" data-id="${esc(d.id)}">Открыть</button>
       </div>
       ${d.status === 'error' ? `<div class="divide"></div><div class="row"><button class="mini" data-act="retry" data-id="${esc(d.id)}">Попробовать ещё раз</button>
@@ -727,6 +786,9 @@ export function settingsView(app) {
         <button class="chip ${!freeOnly ? 'on' : ''}" data-act="model-free" data-v="0">Все · ${pool.length}</button>
         <button class="chip ${freeOnly ? 'on' : ''}" data-act="model-free" data-v="1">Бесплатные · ${freeCount}</button>
       </div>
+      <div class="sm" style="margin-top:9px;line-height:1.45">${app.modelTab === 'chat'
+        ? `Любая модель из ${models.length}: этой достаются вопросы по архиву и тексты.`
+        : `Только те, что умеют читать картинки — ${pool.length} из ${models.length}. Текстовые модели (например gpt-oss) бланк не увидят.`}</div>
     </div>`;
 
     if (freeOnly) {
@@ -735,9 +797,18 @@ export function settingsView(app) {
     }
 
     if (!filtered.length) {
-      html += `<div class="card"><div class="sm" style="line-height:1.5">${freeOnly
-        ? 'Среди тех, что умеют читать картинки, бесплатных сейчас нет. Сними фильтр или загляни во вкладку «Для текстов» — там бесплатных больше.'
-        : 'Ничего не нашлось. Попробуй другое слово или обнови список.'}</div></div>`;
+      // человек ищет модель, которой просто нет в этой вкладке — скажем об этом прямо
+      const elsewhere = models.filter(m => !q || m.id.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q))
+        .filter(m => !freeOnly || m.free);
+      const blind = elsewhere.filter(m => !(m.inputs || []).includes('image'));
+      html += `<div class="card"><div class="sm" style="line-height:1.55">${
+        (app.modelTab !== 'chat' && blind.length)
+          ? `<b>${esc(blind[0].name)}</b> не умеет читать картинки — такие модели работают только с текстом. Она есть во вкладке <b>«Для текстов»</b>: там ей достанутся вопросы по архиву и формулировки, а бланки будет разбирать другая модель.`
+          : freeOnly
+            ? 'Среди умеющих читать картинки бесплатных сейчас нет. Сними фильтр или загляни во вкладку «Для текстов».'
+            : 'Ничего не нашлось. Попробуй другое слово или обнови список.'}</div>
+        ${(app.modelTab !== 'chat' && blind.length) ? `<div class="row" style="margin-top:11px"><button class="mini" data-act="model-tab" data-tab="chat">Открыть «Для текстов»</button></div>` : ''}
+      </div>`;
     }
 
     html += `<div class="card list">`;

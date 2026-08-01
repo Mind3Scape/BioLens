@@ -4,6 +4,7 @@
 import * as db from './db.js';
 import { matchMarker, toCanonical, defaultRef, markerTitle, markerUnit, markerGroup, statusOf, MARKERS } from './markers.js';
 import { analyzeDocument, analyzeMeal } from './openrouter.js';
+import { isPdf, pdfToImages } from './pdfdoc.js';
 
 export const state = {
   docs: [], meas: [], meals: [],
@@ -20,38 +21,105 @@ export async function loadAll() {
 
 /* ── приём файлов ────────────────────────────────────────────── */
 
-export async function addFiles(files) {
+export async function addFiles(files, { onProgress } = {}) {
   const added = [];
   for (const f of files) {
-    if (!f.type.startsWith('image/') && f.type !== 'application/pdf') continue;
-    const blobId = db.uid('b');
-    const small = f.type.startsWith('image/') ? await db.shrinkImage(f) : f;
-    await db.putBlob(blobId, small);
-    const doc = {
-      id: db.uid('d'), blobId, fileName: f.name || 'снимок',
-      addedAt: new Date().toISOString(),
-      fileDate: f.lastModified ? new Date(f.lastModified).toISOString().slice(0, 10) : null,
+    const pdf = isPdf(f);
+    if (!pdf && !f.type.startsWith('image/')) continue;
+
+    const fileDate = f.lastModified ? new Date(f.lastModified).toISOString().slice(0, 10) : null;
+    const base = {
+      id: db.uid('d'), fileName: f.name || (pdf ? 'документ.pdf' : 'снимок'),
+      addedAt: new Date().toISOString(), fileDate,
       status: 'queued', type: null, title: null, date: null, dateConfidence: 0,
       lab: null, conclusion: null, note: null, error: null, model: null,
     };
-    await db.put('docs', doc);
-    state.docs.unshift(doc);
-    added.push(doc);
+
+    if (pdf) {
+      // PDF разбираем на страницы прямо здесь: модель читает картинки, а не файлы
+      let res;
+      try {
+        onProgress?.({ file: base.fileName, stage: 'pdf' });
+        res = await pdfToImages(f, { onPage: (n, total) => onProgress?.({ file: base.fileName, stage: 'pdf', page: n, total }) });
+      } catch (e) {
+        base.status = 'error';
+        base.error = e.message || 'не смог открыть PDF';
+        base.isPdf = true;
+        await db.put('docs', base);
+        state.docs.unshift(base);
+        added.push(base);
+        continue;
+      }
+      if (res.encrypted) {
+        base.status = 'error';
+        base.error = 'PDF под паролем — сними защиту и загрузи снова';
+        base.isPdf = true;
+        await db.put('docs', base);
+        state.docs.unshift(base);
+        added.push(base);
+        continue;
+      }
+
+      const pageIds = [];
+      for (const page of res.pages) {
+        const id = db.uid('b');
+        await db.putBlob(id, page);
+        pageIds.push(id);
+      }
+      base.isPdf = true;
+      base.pages = pageIds;
+      base.blobId = pageIds[0] || null;
+      base.pageCount = res.total;
+      base.pagesSkipped = Math.max(0, res.total - res.rendered);
+    } else {
+      const blobId = db.uid('b');
+      await db.putBlob(blobId, await db.shrinkImage(f));
+      base.blobId = blobId;
+      base.pages = [blobId];
+    }
+
+    await db.put('docs', base);
+    state.docs.unshift(base);
+    added.push(base);
   }
   return added;
 }
 
 /* Разбор очереди. onTick(doc, index) — чтобы экран показывал живой прогресс. */
 export async function processQueue(onTick, { model } = {}) {
-  const queued = state.docs.filter(d => d.status === 'queued' || d.status === 'error');
+  // разбираем в том порядке, в каком человек их добавил
+  const queued = state.docs
+    .filter(d => d.status === 'queued' || d.status === 'error')
+    .sort((a, b) => (a.addedAt || '').localeCompare(b.addedAt || ''));
   state.queue = { total: queued.length, done: 0, running: true, errors: [] };
   for (const doc of queued) {
     try {
       doc.status = 'reading';
       onTick?.(doc);
-      const dataUrl = await db.getBlobDataUrl(doc.blobId);
-      const { data, modelUsed } = await analyzeDocument(dataUrl, { model });
-      await applyDocResult(doc, data, modelUsed);
+      const pages = (doc.pages && doc.pages.length) ? doc.pages : [doc.blobId];
+      const results = [];
+      const pageErrors = [];
+      let usedModel = null;
+      for (let i = 0; i < pages.length; i++) {
+        doc.readingPage = pages.length > 1 ? { n: i + 1, of: pages.length } : null;
+        onTick?.(doc);
+        const dataUrl = await db.getBlobDataUrl(pages[i]);
+        if (!dataUrl) continue;
+        try {
+          const { data, modelUsed } = await analyzeDocument(dataUrl, { model });
+          usedModel = modelUsed || usedModel;
+          results.push(data);
+        } catch (e) {
+          // одна страница не должна хоронить весь документ
+          pageErrors.push({ page: i + 1, error: e.message || String(e) });
+        }
+        if (i < pages.length - 1) await new Promise(r => setTimeout(r, 400));  // не давим на лимиты модели
+      }
+      doc.readingPage = null;
+      if (!results.length) throw new Error(pageErrors[0]?.error || 'модель ничего не вернула');
+      doc.pageErrors = pageErrors.length ? pageErrors : null;
+      doc.pagesRead = results.length;
+      await applyDocResult(doc, results.length > 1 ? mergePages(results) : results[0], usedModel);
     } catch (e) {
       doc.status = 'error';
       doc.error = e.message || String(e);
@@ -141,6 +209,37 @@ async function applyDocResult(doc, data, modelUsed) {
   }
 }
 
+/* Одна выписка — один документ: собираем страницы в единый результат.
+   Дату, лабораторию и название берём с первой страницы, где они вообще есть. */
+function mergePages(pages) {
+  const good = pages.filter(p => p && p.is_medical !== false);
+  if (!good.length) return { is_medical: false };
+  const first = (field) => good.map(p => p[field]).find(v => v != null && v !== '');
+  const markers = [];
+  const seen = new Set();
+  for (const p of good) {
+    for (const m of (p.markers || [])) {
+      const key = `${(m.name || '').toLowerCase().trim()}|${m.value}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      markers.push(m);
+    }
+  }
+  const conclusions = good.map(p => p.conclusion).filter(Boolean);
+  return {
+    is_medical: true,
+    doc_type: first('doc_type') || 'other',
+    title: first('title') || 'Документ',
+    date: first('date') || null,
+    date_confidence: Math.max(...good.map(p => Number(p.date_confidence || 0))),
+    lab: first('lab') || null,
+    patient_name: first('patient_name') || null,
+    conclusion: conclusions.length ? [...new Set(conclusions)].join('\n\n') : null,
+    note: good.map(p => p.note).filter(Boolean)[0] || null,
+    markers,
+  };
+}
+
 function normDate(s) {
   if (!s) return null;
   const m = String(s).match(/(\d{4})-(\d{2})-(\d{2})/);
@@ -175,7 +274,8 @@ export async function confirmMeasurement(measId) {
 
 export async function deleteDoc(docId) {
   const doc = state.docs.find(d => d.id === docId);
-  if (doc?.blobId) await db.del('blobs', doc.blobId);
+  const blobs = new Set([...(doc?.pages || []), doc?.blobId].filter(Boolean));
+  for (const b of blobs) await db.del('blobs', b);
   const ms = await db.byIndex('meas', 'docId', docId);
   for (const m of ms) await db.del('meas', m.id);
   await db.del('docs', docId);

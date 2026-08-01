@@ -53,7 +53,9 @@ export async function checkKey(key) {
 
 /* Единая точка запроса. Возвращает текст ответа.
    Если модель не умеет response_format — тихо повторяем без него. */
-export async function chat({ messages, model, schema = null, temperature = 0.2, maxTokens = 3000, signal }) {
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+export async function chat({ messages, model, schema = null, temperature = 0.2, maxTokens = 3000, signal, tries = 3 }) {
   const s = settings();
   const key = s.apiKey;
   if (!key) throw new Error('Сначала вставь ключ OpenRouter в настройках');
@@ -63,6 +65,13 @@ export async function chat({ messages, model, schema = null, temperature = 0.2, 
   if (schema) body.response_format = { type: 'json_schema', json_schema: { name: 'result', strict: true, schema } };
 
   let r = await fetch(`${BASE}/chat/completions`, { method: 'POST', headers: headers(key), body: JSON.stringify(body), signal });
+
+  // бесплатные модели часто просят подождать — подождём и попробуем ещё, это дешевле, чем терять страницу
+  for (let attempt = 1; attempt < tries && (r.status === 429 || r.status >= 500); attempt++) {
+    const wait = r.status === 429 ? attempt * 4000 : attempt * 1500;
+    await sleep(wait);
+    r = await fetch(`${BASE}/chat/completions`, { method: 'POST', headers: headers(key), body: JSON.stringify(body), signal });
+  }
 
   if (!r.ok && schema) {
     const txt = await r.text();

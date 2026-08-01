@@ -348,7 +348,11 @@ async function doScan() {
 async function intake(files) {
   const s = db.settings();
   if (!s.onboarded) db.saveSettings({ onboarded: true });
-  const added = await S.addFiles(files);
+  const hasPdf = files.some(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name || ''));
+  if (hasPdf) toast('Разбираю PDF на страницы…');
+  const added = await S.addFiles(files, {
+    onProgress: (p) => { if (p.stage === 'pdf' && p.page) toast(`${p.file}: страница ${p.page} из ${p.total}`, 1200); },
+  });
   toast(`Взял ${added.length} ${added.length === 1 ? 'файл' : 'файлов'}`);
   go('inbox');
   runQueue();

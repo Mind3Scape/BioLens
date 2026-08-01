@@ -1,11 +1,11 @@
 /* Оболочка кэшируется, данные — никогда: они и так лежат в IndexedDB.
    Запросы к openrouter.ai проходят мимо кэша всегда. */
 
-const CACHE = 'biolens-v5';
+const CACHE = 'biolens-v7';
 const SHELL = [
   './', './index.html', './css/app.css',
   './js/app.js', './js/db.js', './js/store.js', './js/views.js',
-  './js/ui.js', './js/markers.js', './js/openrouter.js', './js/icons.js', './js/scan.js', './js/demo.js', './js/telegram.js', './js/backup.js',
+  './js/ui.js', './js/markers.js', './js/openrouter.js', './js/icons.js', './js/scan.js', './js/demo.js', './js/telegram.js', './js/backup.js', './js/pdfdoc.js',
   './manifest.webmanifest',
 ];
 
