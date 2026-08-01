@@ -6,6 +6,7 @@ import * as db from './db.js';
 import { icon } from './icons.js';
 import { esc, sparkline, chart, statusDot, aiBlock, emptyBlock, ring, bar } from './ui.js';
 import { markerTitle } from './markers.js';
+import { tgUserName } from './telegram.js';
 
 const head = (title, sub, right = '') => `
   <div class="head">
@@ -788,7 +789,8 @@ export function onboarding(app) {
   const step = app.obStep || 1;
 
   if (step === 1) {
-    return `<div class="head"><div class="grow"><h1>BioLens</h1><div class="sub">шаг 1 из 3</div></div></div>
+    const who = tgUserName();
+    return `<div class="head"><div class="grow"><h1>${who ? esc(who) + ', это BioLens' : 'BioLens'}</h1><div class="sub">шаг 1 из 3</div></div></div>
     <div class="card"><div class="row">${icon('sparkle', 'ico s')}
       <div class="grow sm" style="color:var(--ink2);line-height:1.55">Кидай сюда скриншоты анализов — я сам прочитаю дату, лабораторию и показатели и сложу их <b style="color:var(--ink)">в линии по годам</b>.</div></div></div>
     <div class="card">
