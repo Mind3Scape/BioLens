@@ -176,10 +176,22 @@ async function applyDocResult(doc, data, modelUsed) {
   if (doc.status === 'duplicate') return;
 
   const sex = db.settings().sex;
+  /* Два разных названия из ОДНОГО бланка не могут быть одним показателем.
+     Если словарь всё же свёл их вместе — второе останется отдельной строкой,
+     иначе на графике появятся две точки в один день и выдуманная «динамика». */
+  const takenKeys = new Map();
   for (const raw of (data.markers || [])) {
     if (raw.value == null || !isFinite(Number(raw.value))) continue;
     const hit = matchMarker(raw.name);
-    const key = hit ? hit.key : ('raw:' + (raw.name || '').toLowerCase().trim());
+    let key = hit ? hit.key : ('raw:' + (raw.name || '').toLowerCase().trim());
+    let collided = false;
+    const rawName = (raw.name || '').trim();
+    if (takenKeys.has(key) && takenKeys.get(key) !== rawName.toLowerCase()) {
+      key = 'raw:' + rawName.toLowerCase();
+      collided = true;
+    } else {
+      takenKeys.set(key, rawName.toLowerCase());
+    }
     const conv = hit ? toCanonical(key, raw.value, raw.unit) : { value: Number(raw.value), unit: raw.unit || '', converted: false, factor: 1 };
 
     let refLow = raw.ref_low, refHigh = raw.ref_high;
@@ -202,7 +214,8 @@ async function applyDocResult(doc, data, modelUsed) {
       refLow: refLow ?? null, refHigh: refHigh ?? null, refSource,
       date: doc.date, lab: doc.lab || null,
       confidence: Number(raw.confidence ?? 1), confirmed: Number(raw.confidence ?? 1) >= 0.75,
-      matchExact: hit ? hit.exact : false,
+      matchExact: hit && !collided ? hit.exact : false,
+      separated: collided,     // «не смешал с соседней строкой того же бланка»
     };
     await db.put('meas', rec);
     state.meas.push(rec);
@@ -294,10 +307,20 @@ export async function requeueAll() {
 /* ── линии показателей ───────────────────────────────────────── */
 
 export function seriesFor(key) {
-  return state.meas
+  const list = state.meas
     .filter(m => m.key === key && m.date)
     .sort((a, b) => a.date.localeCompare(b.date))
     .map(m => ({ ...m, status: statusOf(m.value, m.refLow, m.refHigh) }));
+  // помечаем замеры одной даты: это не динамика, а два измерения одного дня
+  const byDate = {};
+  for (const m of list) (byDate[m.date] ||= []).push(m);
+  for (const m of list) m.sameDay = byDate[m.date].length > 1;
+  return list;
+}
+
+/* Сколько в серии по-настоящему разных дней — по нему решаем, есть ли динамика вообще */
+export function distinctDays(series) {
+  return new Set(series.map(m => m.date)).size;
 }
 
 export function markerKeys() {

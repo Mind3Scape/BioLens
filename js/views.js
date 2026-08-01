@@ -4,8 +4,8 @@
 import * as S from './store.js';
 import * as db from './db.js';
 import { icon } from './icons.js';
-import { esc, sparkline, chart, statusDot, aiBlock, emptyBlock, ring, bar } from './ui.js';
-import { markerTitle } from './markers.js';
+import { esc, sparkline, chart, statusDot, aiBlock, emptyBlock, ring, bar, rangeBar } from './ui.js';
+import { markerTitle, MARKERS } from './markers.js';
 import { tgUserName, tgUser, inTelegram } from './telegram.js';
 
 const head = (title, sub, right = '') => `
@@ -156,9 +156,10 @@ export function markers(app) {
 const GROUP_TITLES = { blood: 'Кровь', liver: 'Печень', lipids: 'Липиды', iron: 'Железо', hormones: 'Гормоны', vitamins: 'Витамины', kidney: 'Почки', sugar: 'Сахар', other: 'Прочее' };
 
 function row(m) {
+  const ref = (m.last.refLow != null || m.last.refHigh != null) ? `норма ${S.fmtRef(m.last)}` : 'норма не указана';
   const sub = m.stale
     ? `последний раз ${S.ruDate(m.last.date)}`
-    : `${m.count} ${plural(m.count, 'замер', 'замера', 'замеров')}${m.last.refSource === 'типовая' ? ' · типовая норма' : ''}`;
+    : `${ref}${m.last.refSource === 'типовая' ? ' (типовая)' : ''} · ${m.count} ${plural(m.count, 'замер', 'замера', 'замеров')}`;
   return `<div class="it" data-act="marker" data-key="${esc(m.key)}">
     ${statusDot(m.stale ? 'unknown' : m.status)}
     <div class="grow"><div class="nm">${esc(m.title)}</div><div class="sm">${esc(sub)}</div></div>
@@ -196,19 +197,40 @@ export function markerDetail(app) {
 
   let html = backHead(title, `${series.length} ${plural(series.length, 'замер', 'замера', 'замеров')} · ${unit}`);
 
+  const days = S.distinctDays(series);
+  const showDiff = diff != null && days > 1;
   html += `<div class="card">
     <div class="hero">
       <div class="big" style="${st === 'out' ? 'color:var(--warn)' : ''}">${S.trim(last.value)}</div>
       <div class="u">${esc(unit)}</div>
       <div class="grow" style="text-align:right">
-        ${diff != null ? `<div class="delta ${diff > 0 ? 'up' : 'down'}" style="font-size:13px">${diff > 0 ? '+' : ''}${S.trim(diff)} за год</div>` : ''}
+        ${showDiff ? `<div class="delta ${diff > 0 ? 'up' : 'down'}" style="font-size:13px">${diff > 0 ? '+' : ''}${S.trim(diff)} за год</div>` : ''}
         <div class="sm">${S.ruDate(last.date)}</div>
       </div>
     </div>
-    <div class="row" style="margin-top:12px">${statusDot(st)}
-      <div class="sm">${esc(S.ruStatus(st))}${last.refLow != null || last.refHigh != null ? ` · коридор <b>${esc(S.fmtRef(last))}</b>${last.refSource === 'типовая' ? ' (типовая норма, в бланке её не было)' : ''}` : ''}</div>
+    ${rangeBar(last.value, last.refLow, last.refHigh, unit)}
+    <div class="row" style="margin-top:10px">${statusDot(st)}
+      <div class="sm">${esc(S.ruStatus(st))}${last.refLow != null || last.refHigh != null
+        ? ` · норма <b>${esc(S.fmtRef(last))} ${esc(unit)}</b> ${last.refSource === 'типовая'
+            ? '— типовая для взрослых, в бланке границ не было'
+            : `— так написано в бланке${last.lab ? ' ' + esc(last.lab) : ''}`}`
+        : ' · границы нормы в бланке не указаны'}</div>
     </div>
   </div>`;
+
+  const mk = MARKERS[key];
+  if (mk?.note) {
+    html += `<div class="card flat"><div class="row">${icon('eye', 'ico s')}
+      <div class="grow sm" style="line-height:1.5">${esc(mk.note)}</div></div></div>`;
+  }
+  if (last.separated) {
+    html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
+      <div class="grow sm">В бланке рядом стоял похожий по названию показатель — я держу их <b>раздельно</b>, чтобы не склеить разное в одну линию</div></div></div>`;
+  }
+  if (series.some(m => m.sameDay)) {
+    html += `<div class="card flat"><div class="row">${icon('recycle', 'ico s')}
+      <div class="grow sm">В один день есть несколько измерений — это не динамика, а повторные замеры. Разницу между ними за изменение не считаю</div></div></div>`;
+  }
 
   if (series.length === 1) {
     html += `<div class="card" style="padding:22px 16px;text-align:center">

@@ -108,8 +108,8 @@ export async function shrinkImage(file, max = 1600, quality = 0.85) {
 const SKEY = 'biolens.settings';
 const defaults = {
   apiKey: '',
-  modelVision: '',
-  modelChat: '',
+  modelVision: 'google/gemini-2.5-flash',   // уверенно читает таблицы бланков, стоит доли цента за страницу
+  modelChat: 'google/gemini-2.5-flash',
   profileName: 'Я',
   sex: 'm',
   birthYear: 1988,
@@ -130,11 +130,13 @@ export function settings() {
   try {
     const saved = JSON.parse(localStorage.getItem(SKEY) || '{}');
     // разовый переезд: раньше темой правил Телеграм, теперь по умолчанию светлая
+    let touched = false;
     if (saved.theme === 'auto' && !saved.themeMigrated) {
-      saved.theme = 'light';
-      saved.themeMigrated = 1;
-      localStorage.setItem(SKEY, JSON.stringify(saved));
+      saved.theme = 'light'; saved.themeMigrated = 1; touched = true;
     }
+    if (!saved.modelVision) { saved.modelVision = defaults.modelVision; touched = true; }
+    if (!saved.modelChat) { saved.modelChat = defaults.modelChat; touched = true; }
+    if (touched) localStorage.setItem(SKEY, JSON.stringify(saved));
     return { ...defaults, ...saved };
   } catch { return { ...defaults }; }
 }

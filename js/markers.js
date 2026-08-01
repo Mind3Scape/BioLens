@@ -29,12 +29,12 @@ export const MARKERS = {
   glucose: { t:'Глюкоза', g:'sugar', unit:'ммоль/л', conv:{'mmol/l':1,'ммоль/л':1,'mg/dl':1/18.0182,'мг/дл':1/18.0182},
     ref:[4.1,5.9], syn:['глюкоза','glucose','сахар крови','glu'] },
   hba1c: { t:'Гликированный гемоглобин', g:'sugar', unit:'%', conv:{}, ref:[4,6],
-    syn:['гликированный','hba1c','a1c'] },
+    syn:['гликированный гемоглобин','гликозилированный гемоглобин','hba1c','hb a1c','a1c'] },
   insulin: { t:'Инсулин', g:'sugar', unit:'мкЕд/мл', conv:{}, ref:[2.6,24.9], syn:['инсулин','insulin'] },
 
   cholesterol_total: { t:'Холестерин общий', g:'lipids', unit:'ммоль/л',
     conv:{'mmol/l':1,'ммоль/л':1,'mg/dl':1/38.67,'мг/дл':1/38.67}, ref:[3.3,5.2],
-    syn:['холестерин общий','общий холестерин','cholesterol total','chol'] },
+    syn:['холестерин общий','общий холестерин','=холестерин','cholesterol total','total cholesterol'] },
   ldl: { t:'Холестерин ЛПНП', g:'lipids', unit:'ммоль/л',
     conv:{'mmol/l':1,'ммоль/л':1,'mg/dl':1/38.67,'мг/дл':1/38.67}, ref:[0,3.3],
     syn:['лпнп','ldl','холестерин лпнп','низкой плотности'] },
@@ -57,8 +57,9 @@ export const MARKERS = {
     conv:{'мкмоль/л':1,'umol/l':1,'µmol/l':1,'mg/dl':17.104,'мг/дл':17.104}, ref:[3.4,20.5],
     syn:['билирубин общий','общий билирубин','bilirubin total','tbil'] },
   bilirubin_direct: { t:'Билирубин прямой', g:'liver', unit:'мкмоль/л',
-    conv:{'мкмоль/л':1,'umol/l':1,'mg/dl':17.104}, ref:[0,5.1],
-    syn:['билирубин прямой','прямой билирубин','dbil'] },
+    conv:{'мкмоль/л':1,'umol/l':1,'mg/dl':17.104}, ref:[0,5],
+    syn:['билирубин прямой','прямой билирубин','билирубин связанный','билирубин конъюгированный'],
+    note:'Верхняя граница сильно зависит от метода лаборатории — от 3.4 до 5. Сравнивать значения разных лабораторий нужно осторожно.' },
   albumin: { t:'Альбумин', g:'liver', unit:'г/л', conv:{'г/л':1,'g/l':1,'g/dl':10}, ref:[35,52],
     syn:['альбумин','albumin'] },
   protein_total: { t:'Белок общий', g:'liver', unit:'г/л', conv:{'г/л':1,'g/l':1,'g/dl':10}, ref:[64,83],
@@ -68,31 +69,38 @@ export const MARKERS = {
     conv:{'мкмоль/л':1,'umol/l':1,'mg/dl':88.4,'мг/дл':88.4}, refBySex:{m:[62,106],f:[44,80]},
     syn:['креатинин','creatinine','crea'] },
   urea: { t:'Мочевина', g:'kidney', unit:'ммоль/л',
-    conv:{'ммоль/л':1,'mmol/l':1,'mg/dl':1/2.8,'мг/дл':1/2.8}, ref:[2.8,7.2],
-    syn:['мочевина','urea','bun'] },
+    conv:{'ммоль/л':1,'mmol/l':1,'mg/dl':0.1665,'мг/дл':0.1665}, refBySex:{m:[3.2,7.3],f:[2.6,6.7]},
+    syn:['мочевина','urea'],
+    note:'После 50 лет верхняя граница выше. Не путать с «азотом мочевины» (BUN) — это другое число.' },
   uric_acid: { t:'Мочевая кислота', g:'kidney', unit:'мкмоль/л',
     conv:{'мкмоль/л':1,'umol/l':1,'mg/dl':59.48}, refBySex:{m:[202,416],f:[143,339]},
     syn:['мочевая кислота','uric acid'] },
 
   ferritin: { t:'Ферритин', g:'iron', unit:'нг/мл', conv:{'нг/мл':1,'ng/ml':1,'мкг/л':1,'ug/l':1,'µg/l':1},
-    refBySex:{m:[30,400],f:[13,150]}, syn:['ферритин','ferritin'] },
+    refBySex:{m:[20,250],f:[10,120]}, syn:['ферритин','ferritin'],
+    note:'Ферритин растёт при любом воспалении — поэтому нормальное число не всегда исключает дефицит железа. Границы у лабораторий расходятся сильнее, чем у других показателей.' },
   iron: { t:'Железо сывороточное', g:'iron', unit:'мкмоль/л',
-    conv:{'мкмоль/л':1,'umol/l':1,'mcg/dl':0.179,'мкг/дл':0.179}, refBySex:{m:[11.6,31.3],f:[9,30.4]},
-    syn:['железо','iron','fe','железо сывороточное','fe сыв'] },
-  transferrin: { t:'Трансферрин', g:'iron', unit:'г/л', conv:{'г/л':1,'g/l':1}, ref:[2,3.6],
-    syn:['трансферрин','transferrin'] },
+    conv:{'мкмоль/л':1,'umol/l':1,'mcg/dl':0.179,'мкг/дл':0.179}, refBySex:{m:[11,28],f:[6.6,26]},
+    syn:['железо','iron','fe','железо сывороточное','fe сыв'],
+    note:'Сильно колеблется в течение суток и после еды. Одно значение мало о чём говорит — смотрят вместе с ферритином и ОЖСС.' },
+  transferrin: { t:'Трансферрин', g:'iron', unit:'г/л', conv:{'г/л':1,'g/l':1,'мг/дл':0.01}, ref:[2,3.6],
+    syn:['трансферрин','transferrin','сидерофилин'] },
 
   tsh: { t:'ТТГ', g:'hormones', unit:'мЕд/л', conv:{'мед/л':1,'miu/l':1,'µiu/ml':1,'мкме/мл':1,'uiu/ml':1},
-    ref:[0.4,4.0], syn:['ттг','tsh','тиреотропный'] },
-  t4_free: { t:'Т4 свободный', g:'hormones', unit:'пмоль/л', conv:{'пмоль/л':1,'pmol/l':1}, ref:[9,19],
-    syn:['т4 свободный','free t4','ft4'] },
-  t3_free: { t:'Т3 свободный', g:'hormones', unit:'пмоль/л', conv:{'пмоль/л':1,'pmol/l':1}, ref:[2.6,5.7],
-    syn:['т3 свободный','free t3','ft3'] },
+    ref:[0.27,4.2], syn:['ттг','tsh','тиреотропный гормон','тиреотропин'],
+    note:'Верхняя граница у разных лабораторий от 4.0 до 5.0 — это один из самых спорных показателей. При беременности нормы свои.' },
+  t4_free: { t:'Т4 свободный', g:'hormones', unit:'пмоль/л', conv:{'пмоль/л':1,'pmol/l':1,'нг/дл':12.87}, ref:[10.8,22],
+    syn:['т4 свободный','свободный тироксин','free t4','ft4'],
+    note:'При беременности границы ниже и меняются по триместрам.' },
+  t3_free: { t:'Т3 свободный', g:'hormones', unit:'пмоль/л', conv:{'пмоль/л':1,'pmol/l':1,'пг/мл':1.536}, ref:[3.1,6.8],
+    syn:['т3 свободный','свободный трийодтиронин','free t3','ft3'] },
   testosterone: { t:'Тестостерон общий', g:'hormones', unit:'нмоль/л',
-    conv:{'нмоль/л':1,'nmol/l':1,'ng/dl':1/28.84,'нг/дл':1/28.84}, refBySex:{m:[8.6,29],f:[0.3,2.4]},
-    syn:['тестостерон','testosterone'] },
-  cortisol: { t:'Кортизол', g:'hormones', unit:'нмоль/л', conv:{'нмоль/л':1,'nmol/l':1}, ref:[171,536],
-    syn:['кортизол','cortisol'] },
+    conv:{'нмоль/л':1,'nmol/l':1,'ng/dl':0.0347,'нг/дл':0.0347}, refBySex:{m:[8.64,29],f:[0.29,1.67]},
+    syn:['тестостерон общий','общий тестостерон','testosterone'],
+    note:'Сдают утром: к вечеру значение заметно ниже. После 50 лет нижняя граница снижается.' },
+  cortisol: { t:'Кортизол', g:'hormones', unit:'нмоль/л', conv:{'нмоль/л':1,'nmol/l':1,'мкг/дл':27.59}, ref:[166,507],
+    syn:['кортизол','cortisol','гидрокортизон'],
+    note:'Границы даны для утренней крови (6–10 часов). Вечером норма другая — примерно 74–291.' },
 
   vitamin_d: { t:'Витамин D, 25-ОН', g:'vitamins', unit:'нг/мл',
     conv:{'нг/мл':1,'ng/ml':1,'нмоль/л':1/2.5,'nmol/l':1/2.5}, ref:[30,100],
@@ -111,33 +119,72 @@ export const MARKERS = {
   potassium: { t:'Калий', g:'other', unit:'ммоль/л', conv:{'ммоль/л':1,'mmol/l':1}, ref:[3.5,5.1],
     syn:['калий','potassium','k'] },
   crp: { t:'С-реактивный белок', g:'other', unit:'мг/л', conv:{'мг/л':1,'mg/l':1}, ref:[0,5],
-    syn:['срб','с-реактивный','crp','c-reactive'] },
+    syn:['срб','с реактивный белок','с реактивный','crp','c reactive protein'] },
+  sodium: { t:'Натрий', g:'other', unit:'ммоль/л', conv:{'ммоль/л':1,'mmol/l':1}, ref:[136,145],
+    syn:['натрий','sodium','na'] },
+  chloride: { t:'Хлориды', g:'other', unit:'ммоль/л', conv:{'ммоль/л':1,'mmol/l':1}, ref:[98,107],
+    syn:['хлор','хлориды','chloride','cl'] },
+  calcium_ionized: { t:'Кальций ионизированный', g:'other', unit:'ммоль/л', conv:{'ммоль/л':1,'mmol/l':1}, ref:[1.16,1.32],
+    syn:['кальций ионизированный','ионизированный кальций'] },
+  bilirubin_indirect: { t:'Билирубин непрямой', g:'liver', unit:'мкмоль/л',
+    conv:{'мкмоль/л':1,'umol/l':1,'mg/dl':17.104}, ref:[0,17],
+    syn:['билирубин непрямой','непрямой билирубин','билирубин свободный'] },
+  non_hdl: { t:'Холестерин не-ЛПВП', g:'lipids', unit:'ммоль/л',
+    conv:{'ммоль/л':1,'mmol/l':1,'mg/dl':1/38.67}, ref:[0,3.8],
+    syn:['холестерин не лпвп','не лпвп','non hdl'] },
+  atherogenic: { t:'Коэффициент атерогенности', g:'lipids', unit:'', conv:{}, ref:[0,3],
+    syn:['коэффициент атерогенности','индекс атерогенности'] },
+  tibc: { t:'ОЖСС', g:'iron', unit:'мкмоль/л', conv:{'мкмоль/л':1,'umol/l':1}, ref:[45,77],
+    syn:['ожсс','общая железосвязывающая способность','tibc'] },
   zinc: { t:'Цинк', g:'other', unit:'мкмоль/л', conv:{'мкмоль/л':1,'umol/l':1}, ref:[9,18],
     syn:['цинк','zinc'] },
 };
 
-const norm = (s) => (s || '').toString().toLowerCase().replace(/ё/g, 'е').replace(/[.,()\-–—]/g, ' ').replace(/\s+/g, ' ').trim();
+const norm = (s) => (s || '').toString().toLowerCase()
+  .replace(/\u0451/g, 'е')
+  .replace(/[.,()\[\]{}\/\\:;+*"'\u00ab\u00bb]/g, ' ')
+  .replace(/[-\u2013\u2014]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+/* Слова, которые МЕНЯЮТ смысл показателя. Если такое слово есть в названии из бланка,
+   но его нет в синониме — это другой показатель, и склеивать их нельзя.
+   Именно из-за этого «Холестерин не-ЛПВП» попадал в ЛПВП, а
+   «гликированный гемоглобин» — в обычный гемоглобин. */
+const MODIFIERS = [
+  'не', 'non', 'ионизированный', 'непрямой', 'прямой', 'свободный',
+  'гликированный', 'гликозилированный', 'связанный', 'индекс', 'коэффициент',
+  'отношение', 'соотношение', 'моча', 'мочи', 'суточной', 'слюне', 'слюны', 'мочевой',
+];
+
+const words = (s) => norm(s).split(' ').filter(Boolean);
 
 /* Ищем канонический ключ по названию из бланка.
-   Возвращает {key, exact} или null — тогда показатель хранится «как есть». */
+   Порядок строгий: точное совпадение → самый длинный синоним, все слова которого есть в названии. */
 export function matchMarker(rawName) {
   const n = norm(rawName);
   if (!n) return null;
+  const nWords = words(rawName);
+
   for (const [key, m] of Object.entries(MARKERS)) {
-    for (const s of m.syn) {
-      const sn = norm(s);
-      if (n === sn) return { key, exact: true };
+    for (const syn of m.syn) if (norm(syn.replace(/^=/, '')) === n) return { key, exact: true };
+  }
+
+  let best = null;
+  for (const [key, m] of Object.entries(MARKERS)) {
+    for (const syn of m.syn) {
+      if (syn.startsWith('=')) continue;      // слишком широкое слово — только точное совпадение
+      const sWords = words(syn);
+      if (!sWords.length) continue;
+      const covered = sWords.every(w => nWords.includes(w) || (w.length >= 4 && nWords.some(x => x.startsWith(w))));
+      if (!covered) continue;
+      const extraModifier = nWords.some(w => MODIFIERS.includes(w) && !sWords.includes(w));
+      if (extraModifier) continue;
+      const score = sWords.join('').length + sWords.length * 2;
+      if (!best || score > best.score) best = { key, score };
     }
   }
-  for (const [key, m] of Object.entries(MARKERS)) {
-    for (const s of m.syn) {
-      const sn = norm(s);
-      if (sn.length >= 3 && (n.startsWith(sn + ' ') || n.includes(' ' + sn) || n.startsWith(sn))) {
-        return { key, exact: false };
-      }
-    }
-  }
-  return null;
+  return best ? { key: best.key, exact: false } : null;
 }
 
 /* Пересчёт значения из единицы бланка в каноническую.

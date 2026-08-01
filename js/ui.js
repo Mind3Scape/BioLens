@@ -194,6 +194,40 @@ export function ring(pct, { size = 44, stroke = 5, color = 'var(--gold)' } = {})
   </svg>`;
 }
 
+/* Полоса-коридор: где значение стоит относительно границ нормы.
+   Раньше норма была просто серой заливкой на графике, и было непонятно, какие это числа. */
+export function rangeBar(value, low, high, unit = '') {
+  const v = Number(value);
+  if (!isFinite(v) || (low == null && high == null)) return '';
+  const lo = low != null ? Number(low) : null;
+  const hi = high != null ? Number(high) : null;
+
+  // рисуем шкалу с запасом по краям, чтобы значение вне нормы было видно
+  const span = (hi != null && lo != null) ? (hi - lo) : Math.abs(v) * 0.6 || 1;
+  const from = Math.min(lo != null ? lo : v, v) - span * 0.35;
+  const to = Math.max(hi != null ? hi : v, v) + span * 0.35;
+  const pos = (x) => Math.max(0, Math.min(100, ((x - from) / ((to - from) || 1)) * 100));
+
+  const bandL = lo != null ? pos(lo) : 0;
+  const bandR = hi != null ? pos(hi) : 100;
+  const at = pos(v);
+  const st = (lo != null && v < lo) || (hi != null && v > hi) ? 'out' : 'ok';
+  const color = st === 'out' ? 'var(--warn)' : 'var(--ink)';
+
+  return `<div style="margin-top:14px">
+    <div style="position:relative;height:34px">
+      <div style="position:absolute;left:0;right:0;top:13px;height:8px;border-radius:99px;background:var(--hair)"></div>
+      <div style="position:absolute;left:${bandL}%;width:${Math.max(2, bandR - bandL)}%;top:13px;height:8px;border-radius:99px;background:var(--gold-soft);border:1px solid rgba(239,159,20,0.35)"></div>
+      <div style="position:absolute;left:${at}%;top:6px;width:3px;height:22px;border-radius:99px;background:${color};transform:translateX(-1.5px)"></div>
+    </div>
+    <div class="row" style="margin-top:-4px">
+      <div class="sm" style="flex:1">${lo != null ? `от <b style="color:var(--ink)">${trim(lo)}</b>` : ''}</div>
+      <div class="sm" style="text-align:center;flex:1;color:${st === 'out' ? 'var(--warn)' : 'var(--ink)'};font-weight:700">${trim(v)}${unit ? ' ' + esc(unit) : ''}</div>
+      <div class="sm" style="flex:1;text-align:right">${hi != null ? `до <b style="color:var(--ink)">${trim(hi)}</b>` : ''}</div>
+    </div>
+  </div>`;
+}
+
 export function bar(value, target, { color = 'var(--ink)' } = {}) {
   const pct = Math.max(0, Math.min(1.35, target ? value / target : 0));
   const over = pct > 1;
