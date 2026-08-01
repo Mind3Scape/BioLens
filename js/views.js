@@ -4,7 +4,7 @@
 import * as S from './store.js';
 import * as db from './db.js';
 import { icon } from './icons.js';
-import { esc, sparkline, chart, statusDot, aiBlock, emptyBlock, ring, bar, rangeBar } from './ui.js';
+import { esc, sparkline, chart, statusDot, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale } from './ui.js';
 import { markerTitle, MARKERS } from './markers.js';
 import { tgUserName, tgUser, inTelegram } from './telegram.js';
 
@@ -209,6 +209,7 @@ export function markerDetail(app) {
       </div>
     </div>
     ${rangeBar(last.value, last.refLow, last.refHigh, unit)}
+    ${gradeScale(last.value, MARKERS[key]?.grades)}
     <div class="row" style="margin-top:10px">${statusDot(st)}
       <div class="sm">${esc(S.ruStatus(st))}${last.refLow != null || last.refHigh != null
         ? ` · норма <b>${esc(S.fmtRef(last))} ${esc(unit)}</b> ${last.refSource === 'типовая'

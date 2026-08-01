@@ -228,6 +228,25 @@ export function rangeBar(value, low, high, unit = '') {
   </div>`;
 }
 
+/* Клинические градации — там, где «норма лаборатории» и смысл числа расходятся.
+   Классика: витамин D, где 25 нг/мл формально «ниже нормы», а по рекомендациям
+   это «недостаточность», а не дефицит. */
+export function gradeScale(value, grades) {
+  if (!grades?.length || !isFinite(Number(value))) return '';
+  const v = Number(value);
+  let activeIdx = grades.findIndex(g => g.to != null && v < g.to);
+  if (activeIdx === -1) activeIdx = grades.length - 1;
+  return `<div class="chips" style="margin-top:12px">
+    ${grades.map((g, i) => {
+      const on = i === activeIdx;
+      const range = g.to != null
+        ? (i === 0 ? `до ${trim(g.to)}` : `${trim(grades[i - 1].to)}–${trim(g.to)}`)
+        : `выше ${trim(grades[grades.length - 2]?.to ?? '')}`;
+      return `<span class="chip ${on ? 'gold' : ''}" style="${on ? 'font-weight:800' : 'opacity:.65'}">${esc(g.label)} · ${range}</span>`;
+    }).join('')}
+  </div>`;
+}
+
 export function bar(value, target, { color = 'var(--ink)' } = {}) {
   const pct = Math.max(0, Math.min(1.35, target ? value / target : 0));
   const over = pct > 1;
