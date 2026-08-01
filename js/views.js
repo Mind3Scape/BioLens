@@ -6,6 +6,7 @@ import * as db from './db.js';
 import { icon } from './icons.js';
 import { esc, sparkline, chart, statusDot, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale } from './ui.js';
 import { markerTitle, MARKERS } from './markers.js';
+import { info } from './reference.js';
 import { tgUserName, tgUser, inTelegram } from './telegram.js';
 
 const head = (title, sub, right = '') => `
@@ -199,12 +200,14 @@ export function markerDetail(app) {
 
   const days = S.distinctDays(series);
   const showDiff = diff != null && days > 1;
+  // настоящее ли это изменение или разброс измерения
+  const sig = base && base !== last ? S.changeSignificance(key, base.value, last.value) : null;
   html += `<div class="card">
     <div class="hero">
       <div class="big" style="${st === 'out' ? 'color:var(--warn)' : ''}">${S.trim(last.value)}</div>
       <div class="u">${esc(unit)}</div>
       <div class="grow" style="text-align:right">
-        ${showDiff ? `<div class="delta ${diff > 0 ? 'up' : 'down'}" style="font-size:13px">${diff > 0 ? '+' : ''}${S.trim(diff)} за год</div>` : ''}
+        ${showDiff ? `<div class="delta ${sig?.significant === false ? '' : (diff > 0 ? 'up' : 'down')}" style="font-size:13px">${diff > 0 ? '+' : ''}${S.trim(diff)} за год</div>` : ''}
         <div class="sm">${S.ruDate(last.date)}</div>
       </div>
     </div>
@@ -218,6 +221,50 @@ export function markerDetail(app) {
         : ' · границы нормы в бланке не указаны'}</div>
     </div>
   </div>`;
+
+  /* Объяснение простым языком: сначала «что это», остальное — по нажатию,
+     чтобы экран не превращался в справочник. */
+  const ref = info(key);
+  if (ref) {
+    const open = !!app.infoOpen?.[key];
+    html += `<div class="card">
+      <div class="row" style="align-items:flex-start">
+        ${icon('eye', 'ico s')}
+        <div class="grow">
+          <div class="cap" style="padding:0 0 6px">Что это значит</div>
+          <div class="sm" style="font-size:14px;line-height:1.55;color:var(--ink)">${esc(ref.what)}</div>
+        </div>
+      </div>
+      ${open ? `
+        <div class="divide"></div>
+        <div class="cap" style="padding:0 0 5px">Почему бывает выше</div>
+        <div class="sm" style="line-height:1.55">${esc(ref.high)}</div>
+        <div class="divide"></div>
+        <div class="cap" style="padding:0 0 5px">Почему бывает ниже</div>
+        <div class="sm" style="line-height:1.55">${esc(ref.low)}</div>
+        <div class="divide"></div>
+        <div class="cap" style="padding:0 0 5px">Как сдавать правильно</div>
+        <div class="sm" style="line-height:1.55">${esc(ref.prep)}</div>
+        ${ref.friends?.length ? `
+        <div class="divide"></div>
+        <div class="cap" style="padding:0 0 7px">Смотрят вместе с этим</div>
+        <div class="chips">${ref.friends.map(f => `<span class="chip">${esc(f)}</span>`).join('')}</div>` : ''}
+        <div class="divide"></div>
+        <div class="row" style="align-items:flex-start">${icon('warning', 'ico s')}
+          <div class="grow sm" style="line-height:1.55">${esc(ref.redFlag)}</div></div>
+      ` : ''}
+      <div class="divide"></div>
+      <button class="mini" data-act="toggle-info" data-key="${esc(key)}">${open ? 'Свернуть' : 'Подробнее: выше, ниже, как сдавать'}</button>
+    </div>`;
+  }
+
+  if (showDiff && sig?.significant === false) {
+    html += `<div class="card flat"><div class="row">${icon('eye', 'ico s')}
+      <div class="grow sm" style="line-height:1.5">Разница <b>${Math.abs(Math.round(sig.percent))}%</b> — это меньше, чем естественный разброс этого показателя (около ${Math.round(sig.rcv)}%). Считать это изменением рано: так колеблется даже стабильный результат.</div></div></div>`;
+  } else if (showDiff && sig?.significant === true) {
+    html += `<div class="card flat"><div class="row">${icon('chartline', 'ico s')}
+      <div class="grow sm" style="line-height:1.5">Изменение на <b>${Math.abs(Math.round(sig.percent))}%</b> выходит за естественный разброс показателя (около ${Math.round(sig.rcv)}%) — это похоже на настоящий сдвиг.</div></div></div>`;
+  }
 
   const mk = MARKERS[key];
   if (mk?.note) {

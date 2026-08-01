@@ -2,7 +2,7 @@
    Здесь же — сборка контекста для ИИ и связка «анализы ↔ еда». */
 
 import * as db from './db.js';
-import { matchMarker, toCanonical, defaultRef, markerTitle, markerUnit, markerGroup, statusOf, MARKERS } from './markers.js';
+import { matchMarker, toCanonical, defaultRef, markerTitle, markerUnit, markerGroup, statusOf, MARKERS, RCV, RECHECK } from './markers.js';
 import { analyzeDocument, analyzeMeal } from './openrouter.js';
 import { isPdf, pdfToImages } from './pdfdoc.js';
 
@@ -374,16 +374,23 @@ export function shifts(limit = 3) {
     .slice(0, limit);
 }
 
-/* Что пора пересдать */
+/* Настоящее ли это изменение или разброс измерения.
+   Возвращает {percent, significant, rcv} — rcv null, если для показателя данных нет. */
+export function changeSignificance(key, from, to) {
+  if (!isFinite(from) || !isFinite(to) || !from) return { percent: null, significant: null, rcv: null };
+  const percent = ((to - from) / Math.abs(from)) * 100;
+  const rcv = RCV[key] ?? null;
+  return { percent, rcv, significant: rcv == null ? null : Math.abs(percent) >= rcv };
+}
+
+/* Что пора пересдать — сроки из рекомендаций, где они есть */
 export function dueList() {
-  const now = Date.now();
   return markerList().map(m => {
-    const days = m.daysOld;
-    let every = 365;
-    if (m.status === 'out') every = 180;
-    else if (m.status === 'edge') every = 270;
-    const due = days >= every;
-    return { ...m, every, due, overdue: days - every };
+    const rule = RECHECK[m.key];
+    const bad = m.status === 'out' || m.status === 'edge';
+    const months = rule ? (bad ? rule.bad : rule.ok) : (bad ? 6 : 12);
+    const every = months * 30;
+    return { ...m, every, months, due: m.daysOld >= every, overdue: m.daysOld - every, fromGuideline: !!rule };
   }).filter(m => m.due).sort((a, b) => b.overdue - a.overdue);
 }
 

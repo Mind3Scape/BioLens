@@ -26,6 +26,7 @@ const app = {
   aiSummary: '',
   aiSummaryError: '',
   aiMarker: {},
+  infoOpen: {},
   aiFood: '',
   chat: [],
   asking: false,
@@ -182,6 +183,13 @@ document.addEventListener('click', async (e) => {
       break;
     }
 
+    case 'toggle-info': {
+      app.infoOpen = app.infoOpen || {};
+      const k = el.dataset.key;
+      app.infoOpen[k] = !app.infoOpen[k];
+      const pos = view.scrollTop; render(); $('#view').scrollTop = pos;
+      break;
+    }
     case 'explain': await explainMarker(el.dataset.key); break;
     case 'ask-preset': sendQuestion(el.dataset.q); break;
     case 'ask-send': sendQuestion($('#askInput')?.value || ''); break;
