@@ -4,8 +4,8 @@
 import * as S from './store.js';
 import * as db from './db.js';
 import { icon } from './icons.js';
-import { esc, sparkline, chart, statusDot, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale } from './ui.js';
-import { markerTitle, MARKERS } from './markers.js';
+import { esc, sparkline, chart, statusDot, statusTag, statusWord, toneVar, inkTone, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale } from './ui.js';
+import { markerTitle, markerGroup, MARKERS } from './markers.js';
 import { info } from './reference.js';
 import { tgUserName, tgUser, inTelegram } from './telegram.js';
 
@@ -66,19 +66,43 @@ export function summary(app) {
     html += `<div class="card"><div class="row"><div class="spin"></div><div class="grow sm">Смотрю, что изменилось…</div></div></div>`;
   }
 
+  /* Главное на экране — что вне нормы прямо сейчас. Раньше сводка начиналась
+     с «сдвинулось за год», и человек с высоким холестерином видел проценты,
+     а не сам факт. */
+  const attention = S.attentionList();
+  if (attention.length) {
+    const shown = attention.slice(0, 4);
+    html += `<div class="cap">Требует внимания · ${attention.length}</div><div class="card list">`;
+    html += shown.map(m => `<div class="it" data-act="marker" data-key="${esc(m.key)}">
+      ${statusDot(m.status)}
+      <div class="grow"><div class="nm">${esc(m.title)}</div>
+        <div class="sm">норма ${esc(S.fmtRef(m.last))} ${esc(m.unit)}</div></div>
+      <div style="text-align:right;white-space:nowrap">
+        <div class="val" style="color:${inkTone(m.status)}">${S.trim(m.last.value)}<span class="unit">${esc(m.unit)}</span></div>
+        <div class="delta ${m.status === 'out' ? 'worse' : ''}" style="font-weight:650">${statusWord(m.status, m.last.value, m.last.refLow, m.last.refHigh)}</div>
+      </div>
+    </div>`).join('');
+    if (attention.length > shown.length) {
+      html += `<div class="it" data-act="tab" data-tab="markers"><span class="dot unknown"></span>
+        <div class="grow sm">Ещё ${attention.length - shown.length} — открыть все показатели</div></div>`;
+    }
+    html += `</div>`;
+  }
+
   const shifts = S.shifts(3);
   if (shifts.length) {
     html += `<div class="cap">Сдвинулось за год</div><div class="card list">`;
     html += shifts.map(m => {
       const dir = m.change > 0 ? '+' : '';
-      const good = (m.status === 'ok');
+      // цвет по смыслу: приблизилось к норме или ушло от неё
+      const tone = S.changeTone(m.key, m.base?.value, m.last.value, m.last.refLow, m.last.refHigh);
       return `<div class="it" data-act="marker" data-key="${esc(m.key)}">
         ${statusDot(m.status)}
         <div class="grow"><div class="nm">${esc(m.title)}</div>
           <div class="sm">было ${S.trim(m.base?.value ?? '—')} · норма ${esc(S.fmtRef(m.last))}</div></div>
         ${sparkline(m.series)}
-        <div style="text-align:right"><div class="val">${S.trim(m.last.value)}<span class="unit">${esc(m.unit)}</span></div>
-          <div class="delta ${good ? 'up' : 'down'}">${dir}${Math.round(m.change * 100)}%</div></div>
+        <div style="text-align:right"><div class="val" style="color:${inkTone(m.status)}">${S.trim(m.last.value)}<span class="unit">${esc(m.unit)}</span></div>
+          <div class="delta ${tone}">${dir}${Math.round(m.change * 100)}%</div></div>
       </div>`;
     }).join('');
     html += `</div>`;
@@ -161,13 +185,14 @@ function row(m) {
   const sub = m.stale
     ? `последний раз ${S.ruDate(m.last.date)}`
     : `${ref}${m.last.refSource === 'типовая' ? ' (типовая)' : ''} · ${m.count} ${plural(m.count, 'замер', 'замера', 'замеров')}`;
+  const st = m.stale ? 'unknown' : m.status;
   return `<div class="it" data-act="marker" data-key="${esc(m.key)}">
-    ${statusDot(m.stale ? 'unknown' : m.status)}
+    ${statusDot(st)}
     <div class="grow"><div class="nm">${esc(m.title)}</div><div class="sm">${esc(sub)}</div></div>
     ${m.stale ? '' : sparkline(m.series, { w: 62, h: 24 })}
     <div style="text-align:right;min-width:54px">
-      <div class="val ${m.last.confidence < 0.75 ? 'doubt' : ''}">${S.trim(m.last.value)}</div>
-      ${m.delta != null && !m.stale ? `<div class="delta">${m.delta > 0 ? '+' : ''}${S.trim(m.delta)}</div>` : ''}
+      <div class="val ${m.last.confidence < 0.75 ? 'doubt' : ''}" style="color:${inkTone(st)}">${S.trim(m.last.value)}</div>
+      ${m.delta != null && !m.stale ? `<div class="delta ${m.deltaTone}">${m.delta > 0 ? '+' : ''}${S.trim(m.delta)}</div>` : ''}
     </div>
   </div>`;
 }
@@ -202,24 +227,28 @@ export function markerDetail(app) {
   const showDiff = diff != null && days > 1;
   // настоящее ли это изменение или разброс измерения
   const sig = base && base !== last ? S.changeSignificance(key, base.value, last.value) : null;
+  /* Сколько времени прошло между сравниваемыми замерами и та ли лаборатория —
+     без этого «-0.23 за год» появляется у двух бланков, сданных подряд. */
+  const gapDays = base && base !== last ? Math.round((Date.parse(last.date) - Date.parse(base.date)) / 86400000) : 0;
+  const sameLab = !base || (base.lab || '') === (last.lab || '');
+  const period = gapDays >= 300 ? 'за год' : gapDays >= 45 ? `за ${Math.round(gapDays / 30)} мес.` : 'с прошлого раза';
+  const tone = showDiff ? S.changeTone(key, base.value, last.value, last.refLow, last.refHigh) : 'flat';
   html += `<div class="card">
     <div class="hero">
-      <div class="big" style="${st === 'out' ? 'color:var(--warn)' : ''}">${S.trim(last.value)}</div>
+      <div class="big" style="color:${inkTone(st)}">${S.trim(last.value)}</div>
       <div class="u">${esc(unit)}</div>
       <div class="grow" style="text-align:right">
-        ${showDiff ? `<div class="delta ${sig?.significant === false ? '' : (diff > 0 ? 'up' : 'down')}" style="font-size:13px">${diff > 0 ? '+' : ''}${S.trim(diff)} за год</div>` : ''}
-        <div class="sm">${S.ruDate(last.date)}</div>
+        ${statusTag(st, last.value, last.refLow, last.refHigh)}
+        <div class="sm" style="margin-top:5px">${S.ruDate(last.date)}${showDiff ? ` · <span class="delta ${tone}">${diff > 0 ? '+' : ''}${S.trim(diff)} ${period}</span>` : ''}</div>
       </div>
     </div>
-    ${rangeBar(last.value, last.refLow, last.refHigh, unit)}
+    ${rangeBar(last.value, last.refLow, last.refHigh, unit, st)}
     ${gradeScale(last.value, MARKERS[key]?.grades)}
-    <div class="row" style="margin-top:10px">${statusDot(st)}
-      <div class="sm">${esc(S.ruStatus(st))}${last.refLow != null || last.refHigh != null
-        ? ` · норма <b>${esc(S.fmtRef(last))} ${esc(unit)}</b> ${last.refSource === 'типовая'
-            ? '— типовая для взрослых, в бланке границ не было'
-            : `— так написано в бланке${last.lab ? ' ' + esc(last.lab) : ''}`}`
-        : ' · границы нормы в бланке не указаны'}</div>
-    </div>
+    <div class="sm" style="margin-top:12px;line-height:1.5">${last.refLow != null || last.refHigh != null
+        ? `Норма <b>${esc(S.fmtRef(last))} ${esc(unit)}</b> — ${last.refSource === 'типовая'
+            ? 'типовая для взрослых, в бланке границ не было'
+            : `так написано в бланке${last.lab ? ' ' + esc(last.lab) : ''}`}`
+        : 'Границы нормы в бланке не указаны — сказать «много» или «мало» не по чему'}</div>
   </div>`;
 
   /* Объяснение простым языком: сначала «что это», остальное — по нажатию,
@@ -258,7 +287,12 @@ export function markerDetail(app) {
     </div>`;
   }
 
-  if (showDiff && sig?.significant === false) {
+  /* Три разных вывода, и выбор между ними — половина смысла приложения:
+     разница внутри точности метода, разница между лабораториями и настоящий сдвиг. */
+  if (showDiff && gapDays < 45 && !sameLab) {
+    html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
+      <div class="grow sm" style="line-height:1.5">Эти два замера сделаны с разницей ${gapDays === 0 ? 'в один день' : `в ${gapDays} ${plural(gapDays, 'день', 'дня', 'дней')}`} и <b>в разных лабораториях</b>. За такой срок показатель не меняется — почти вся разница здесь принадлежит методу, а не тебе. Это не динамика.</div></div></div>`;
+  } else if (showDiff && sig?.significant === false) {
     html += `<div class="card flat"><div class="row">${icon('eye', 'ico s')}
       <div class="grow sm" style="line-height:1.5">Разница <b>${Math.abs(Math.round(sig.percent))}%</b> — это меньше, чем естественный разброс этого показателя (около ${Math.round(sig.rcv)}%). Считать это изменением рано: так колеблется даже стабильный результат.</div></div></div>`;
   } else if (showDiff && sig?.significant === true) {
@@ -279,6 +313,14 @@ export function markerDetail(app) {
     html += `<div class="card flat"><div class="row">${icon('recycle', 'ico s')}
       <div class="grow sm">В один день есть несколько измерений — это не динамика, а повторные замеры. Разницу между ними за изменение не считаю</div></div></div>`;
   }
+  /* Разные лаборатории меряют разными методами и калибруют приборы по-своему.
+     Часть «динамики» между бланками — это разница лабораторий, а не тела. */
+  const labs = S.labsIn(series);
+  const alreadySaidAboutLabs = showDiff && gapDays < 45 && !sameLab;
+  if (labs.length > 1 && !alreadySaidAboutLabs) {
+    html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
+      <div class="grow sm" style="line-height:1.5">Замеры из разных лабораторий (${esc(labs.join(', '))}). Методы и калибровка у них не совпадают — часть разницы между бланками принадлежит лаборатории, а не тебе. Надёжнее всего сравнивать анализы одной лаборатории.</div></div></div>`;
+  }
 
   if (series.length === 1) {
     html += `<div class="card" style="padding:22px 16px;text-align:center">
@@ -293,7 +335,7 @@ export function markerDetail(app) {
   const converted = series.filter(p => p.converted);
   if (converted.length) {
     const ex = converted[converted.length - 1];
-    html += `<div class="card gold">
+    html += `<div class="card note">
       <div class="row">${icon('warning', 'ico s')}<div class="grow"><div class="nm" style="font-size:14px">Разные единицы в бланках</div></div></div>
       <div class="sm" style="margin-top:8px;line-height:1.55">Привёл к <b>${esc(unit)}</b>. Например, в бланке от ${S.ruDate(ex.date)} стояло <b>${S.trim(ex.rawValue)} ${esc(ex.rawUnit)}</b> — на графике это <b>${S.trim(ex.value)} ${esc(unit)}</b>.</div>
     </div>`;
@@ -318,12 +360,13 @@ export function markerDetail(app) {
   html += [...series].reverse().map((p, i, arr) => {
     const nxt = arr[i + 1];
     const d = nxt ? +(p.value - nxt.value).toFixed(2) : null;
+    const dTone = nxt ? S.changeTone(key, nxt.value, p.value, p.refLow, p.refHigh) : 'flat';
     return `<div class="it" data-act="doc" data-id="${esc(p.docId)}">
       ${statusDot(p.status)}
       <div class="grow"><div class="nm" style="font-size:14px">${S.ruDate(p.date)}</div>
         <div class="sm">${esc(p.lab || 'лаборатория не указана')}${p.converted ? ` · в бланке ${S.trim(p.rawValue)} ${esc(p.rawUnit)}` : ''}</div></div>
-      ${d != null ? `<div class="delta">${d > 0 ? '+' : ''}${S.trim(d)}</div>` : ''}
-      <div class="val ${p.confidence < 0.75 ? 'doubt' : ''}" style="min-width:46px;text-align:right">${S.trim(p.value)}</div>
+      ${d != null && !p.sameDay ? `<div class="delta ${dTone}">${d > 0 ? '+' : ''}${S.trim(d)}</div>` : ''}
+      <div class="val ${p.confidence < 0.75 ? 'doubt' : ''}" style="min-width:46px;text-align:right;color:${inkTone(p.status)}">${S.trim(p.value)}</div>
     </div>`;
   }).join('');
   html += `</div>`;
@@ -451,7 +494,14 @@ function docIcon(type, isPdf) {
 export function docView(app) {
   const doc = S.state.docs.find(d => d.id === app.param.id);
   if (!doc) return backHead('Документ', '') + `<div class="card">Документ не найден.</div>`;
-  const ms = S.state.meas.filter(m => m.docId === doc.id);
+  /* Порядок как в бланке — по группам, внутри по названию: иначе список
+     выглядит случайной кучей и глазами по нему не пройтись. */
+  const GORDER = ['blood', 'lipids', 'sugar', 'liver', 'kidney', 'iron', 'vitamins', 'hormones', 'other'];
+  const ms = S.state.meas.filter(m => m.docId === doc.id).slice().sort((a, b) => {
+    const ga = GORDER.indexOf(markerGroup(a.key)), gb = GORDER.indexOf(markerGroup(b.key));
+    if (ga !== gb) return (ga < 0 ? 99 : ga) - (gb < 0 ? 99 : gb);
+    return (a.title || '').localeCompare(b.title || '', 'ru');
+  });
   const doubts = ms.filter(m => m.confidence < 0.75);
 
   let html = backHead(doc.title || 'Документ',
@@ -465,7 +515,7 @@ export function docView(app) {
       <div class="row" style="margin-top:10px"><div class="grow sm">${esc(doc.fileName || '')}${doc.isPdf ? ` · PDF, ${doc.pageCount || pages.length} ${plural(doc.pageCount || pages.length, 'страница', 'страницы', 'страниц')}` : ''} · оригинал хранится всегда</div>
       <button class="mini warn" data-act="del-doc" data-id="${esc(doc.id)}">Удалить</button></div>
       ${doc.pagesSkipped ? `<div class="sm" style="margin-top:8px">Разобрал первые ${pages.length} — остальные ${doc.pagesSkipped} пропустил, чтобы не тратить лишнего</div>` : ''}
-      ${doc.pageErrors ? `<div class="sm" style="margin-top:8px;color:var(--warn)">Страницы ${doc.pageErrors.map(e => e.page).join(', ')} прочитать не вышло: ${esc(doc.pageErrors[0].error)}</div>` : ''}
+      ${doc.pageErrors ? `<div class="sm" style="margin-top:8px;color:var(--bad)">Страницы ${doc.pageErrors.map(e => e.page).join(', ')} прочитать не вышло: ${esc(doc.pageErrors[0].error)}</div>` : ''}
     </div>`;
   } else {
     html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
@@ -475,11 +525,11 @@ export function docView(app) {
   }
 
   if (doc.status === 'needs-date') {
-    html += `<div class="card gold">
+    html += `<div class="card note">
       <div class="row">${icon('warning', 'ico s')}<div class="grow"><div class="nm" style="font-size:14px">Дата не читается</div></div></div>
       <div class="sm" style="margin:8px 0 11px">${doc.fileDate ? `Файл создан <b>${S.ruDate(doc.fileDate)}</b>. Взять эту дату?` : 'Укажи дату вручную — без неё показатели не встанут в линию.'}</div>
       <div class="chips">
-        ${doc.fileDate ? `<button class="chip gold" data-act="use-file-date" data-id="${esc(doc.id)}">Да, ${S.ruShort(doc.fileDate)}</button>` : ''}
+        ${doc.fileDate ? `<button class="chip on" data-act="use-file-date" data-id="${esc(doc.id)}">Да, ${S.ruShort(doc.fileDate)}</button>` : ''}
         <button class="chip" data-act="pick-date" data-id="${esc(doc.id)}">Выбрать дату</button>
       </div>
     </div>`;
@@ -498,7 +548,7 @@ export function docView(app) {
   }
 
   if (doubts.length) {
-    html += `<div class="card gold">
+    html += `<div class="card note">
       <div class="row">${icon('eye', 'ico s')}<div class="grow"><div class="nm" style="font-size:14px">${doubts.length === 1 ? 'Одно число прочитал неуверенно' : `${doubts.length} чисел прочитал неуверенно`}</div>
         <div class="sm">Сверь с оригиналом выше — это десять секунд</div></div></div>
       ${doubts.map(m => `<div class="divide"></div>
@@ -596,7 +646,7 @@ export function food(app) {
     `<button class="rnd" data-act="settings">${icon('user', 'ico s')}</button><button class="rnd dark" data-act="add-meal">${icon('camera', 'ico s')}</button>`);
 
   if (goal) {
-    html += `<div class="card gold tap" data-act="marker" data-key="${esc(goal.key)}">
+    html += `<div class="card note tap" data-act="marker" data-key="${esc(goal.key)}">
       <div class="row">${icon('target', 'ico s')}
         <div class="grow"><div class="nm" style="font-size:14px">Цель из анализов: ${esc(goal.goal)}</div>
           <div class="sm">${esc(goal.title)} ${S.trim(goal.value)} ${esc(goal.unit)} · норма ${esc(S.fmtRef(goal))} · замер от ${S.ruDate(goal.date)}</div></div>
@@ -634,8 +684,8 @@ export function food(app) {
       const short = !lowerBetter && v < target;
       return `<div style="margin-bottom:11px">
         <div class="row" style="margin-bottom:5px"><div class="grow sm" style="color:var(--ink)">${label}</div>
-          <div class="sm ${over ? '' : ''}" style="${over ? 'color:var(--warn);font-weight:700' : short ? '' : 'font-weight:700;color:var(--ink)'}">${S.trim(v)} / ${target} ${unit}</div></div>
-        ${bar(v, target, { color: lowerBetter ? 'var(--gold)' : 'var(--ink)' })}
+          <div class="sm ${over ? '' : ''}" style="${over ? 'color:var(--bad);font-weight:700' : short ? '' : 'font-weight:700;color:var(--ink)'}">${S.trim(v)} / ${target} ${unit}</div></div>
+        ${bar(v, target, { color: 'var(--ink)' })}
       </div>`;
     }).join('')}
   </div>`;
@@ -746,7 +796,8 @@ export function doctor(app) {
   const s = db.settings();
   const age = new Date().getFullYear() - (s.birthYear || 1990);
   const list = S.markerList();
-  const bad = list.filter(m => !m.stale && (m.status === 'out' || m.status === 'edge'));
+  // страница для врача — только то, что действительно за границей; «у границы» здесь шум
+  const bad = list.filter(m => !m.stale && m.status === 'out');
   const studies = S.state.docs.filter(d => d.status === 'ready' && (d.type === 'imaging' || d.conclusion))
     .sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 5);
   const recent = S.state.docs.filter(d => d.status === 'ready' && d.type === 'blood')
@@ -767,7 +818,7 @@ export function doctor(app) {
         const first = m.series[0];
         return `<div class="it" style="cursor:default">${statusDot(m.status)}
           <div class="grow"><div class="nm" style="font-size:14px">${esc(m.title)} ${S.trim(m.last.value)} ${esc(m.unit)}</div>
-            <div class="sm">норма ${esc(S.fmtRef(m.last))} · ${m.count > 1 ? `было ${S.trim(first.value)} в ${first.date.slice(0, 4)}` : 'единственный замер'} · ${S.ruShort(m.last.date)}</div></div>
+            <div class="sm">норма ${esc(S.fmtRef(m.last))} · ${m.count > 1 ? `было ${S.trim(first.value)} ${S.ruShort(first.date)}` : 'единственный замер'} · ${S.ruShort(m.last.date)}${m.last.lab ? ' · ' + esc(m.last.lab) : ''}</div></div>
         </div>`;
       }).join('')}
     </div></div>`;
@@ -889,7 +940,7 @@ export function settingsView(app) {
         : `$${(m.promptPrice * 1e6).toFixed(2)}/млн вход · $${(m.completionPrice * 1e6).toFixed(2)}/млн выход`;
       return `<div class="it" data-act="pick-model" data-id="${esc(m.id)}">
         ${chosen ? icon('check', 'ico s') : `<span class="dot unknown"></span>`}
-        <div class="grow"><div class="nm" style="font-size:14px">${esc(m.name)}${m.free ? ' <span style="color:var(--gold-ink);font-weight:800">· бесплатно</span>' : ''}</div>
+        <div class="grow"><div class="nm" style="font-size:14px">${esc(m.name)}${m.free ? ' <span style="color:var(--ok);font-weight:800">· бесплатно</span>' : ''}</div>
           <div class="sm">${esc(m.id)}</div>
           <div class="sm">${esc(price)}${m.ctx ? ` · ${Math.round(m.ctx / 1000)}k контекст` : ''}</div></div>
         ${(m.inputs || []).includes('image') ? icon('eye', 'ico s') : ''}

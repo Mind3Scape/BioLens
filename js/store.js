@@ -8,14 +8,19 @@ import { isPdf, pdfToImages } from './pdfdoc.js';
 
 export const state = {
   docs: [], meas: [], meals: [],
+  rev: 0,   // счётчик правок: по нему сбрасывается готовый разбор линий
   queue: { total: 0, done: 0, running: false, errors: [] },
 };
+
+/* Любая правка замеров обязана пройти через это — иначе экраны покажут старое. */
+export function touch() { state.rev++; }
 
 export async function loadAll() {
   const [docs, meas, meals] = await Promise.all([db.all('docs'), db.all('meas'), db.all('meals')]);
   state.docs = docs.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   state.meas = meas;
   state.meals = meals.sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+  touch();
   return state;
 }
 
@@ -71,6 +76,7 @@ export async function addFiles(files, { onProgress } = {}) {
       base.blobId = pageIds[0] || null;
       base.pageCount = res.total;
       base.pagesSkipped = Math.max(0, res.total - res.rendered);
+      base.renderErrors = res.failed?.length ? res.failed : null;
     } else {
       const blobId = db.uid('b');
       await db.putBlob(blobId, await db.shrinkImage(f));
@@ -172,6 +178,7 @@ async function applyDocResult(doc, data, modelUsed) {
   const old = await db.byIndex('meas', 'docId', doc.id);
   for (const m of old) await db.del('meas', m.id);
   state.meas = state.meas.filter(m => m.docId !== doc.id);
+  touch();
 
   if (doc.status === 'duplicate') return;
 
@@ -220,6 +227,7 @@ async function applyDocResult(doc, data, modelUsed) {
     await db.put('meas', rec);
     state.meas.push(rec);
   }
+  touch();
 }
 
 /* Одна выписка — один документ: собираем страницы в единый результат.
@@ -242,7 +250,7 @@ function mergePages(pages) {
   return {
     is_medical: true,
     doc_type: first('doc_type') || 'other',
-    title: first('title') || 'Документ',
+    title: mergedTitle(good) || first('title') || 'Документ',
     date: first('date') || null,
     date_confidence: Math.max(...good.map(p => Number(p.date_confidence || 0))),
     lab: first('lab') || null,
@@ -251,6 +259,16 @@ function mergePages(pages) {
     note: good.map(p => p.note).filter(Boolean)[0] || null,
     markers,
   };
+}
+
+/* У многостраничной выписки страницы называются по-разному («Чекап: биохимия»,
+   «Чекап: гормоны»). Брать заголовок первой страницы — врать про остальные:
+   берём общую часть до двоеточия, если она у всех одна. */
+function mergedTitle(pages) {
+  const titles = [...new Set(pages.map(p => (p.title || '').trim()).filter(Boolean))];
+  if (titles.length <= 1) return titles[0] || null;
+  const heads = [...new Set(titles.map(t => t.split(':')[0].trim()))];
+  return heads.length === 1 ? heads[0] : titles[0];
 }
 
 function normDate(s) {
@@ -269,6 +287,7 @@ export async function setDocDate(docId, date) {
   const ms = await db.byIndex('meas', 'docId', docId);
   for (const m of ms) { m.date = date; await db.put('meas', m); }
   state.meas.forEach(m => { if (m.docId === docId) m.date = date; });
+  touch();
 }
 
 export async function fixMeasurement(measId, value) {
@@ -276,6 +295,7 @@ export async function fixMeasurement(measId, value) {
   if (!m) return;
   m.value = Number(value); m.confidence = 1; m.confirmed = true; m.editedByHuman = true;
   await db.put('meas', m);
+  touch();
 }
 
 export async function confirmMeasurement(measId) {
@@ -283,6 +303,7 @@ export async function confirmMeasurement(measId) {
   if (!m) return;
   m.confidence = 1; m.confirmed = true;
   await db.put('meas', m);
+  touch();
 }
 
 export async function deleteDoc(docId) {
@@ -294,6 +315,7 @@ export async function deleteDoc(docId) {
   await db.del('docs', docId);
   state.docs = state.docs.filter(d => d.id !== docId);
   state.meas = state.meas.filter(m => m.docId !== docId);
+  touch();
 }
 
 /* Полный переразбор — например, после смены модели. */
@@ -306,16 +328,33 @@ export async function requeueAll() {
 
 /* ── линии показателей ───────────────────────────────────────── */
 
+/* Линии считаются на каждый экран, а замеров с годами становятся тысячи.
+   Поэтому раскладываем их по показателям один раз и держим готовое до следующей
+   правки данных — иначе каждый переход по вкладкам заново перебирает весь архив. */
+let cache = { rev: -1, series: null, list: null };
+export function invalidate() { cache.rev = -1; }
+
+function allSeries() {
+  if (cache.rev === state.rev && cache.series) return cache.series;
+  const map = new Map();
+  for (const m of state.meas) {
+    if (!m.date) continue;
+    if (!map.has(m.key)) map.set(m.key, []);
+    map.get(m.key).push({ ...m, status: statusOf(m.value, m.refLow, m.refHigh) });
+  }
+  for (const list of map.values()) {
+    list.sort((a, b) => a.date.localeCompare(b.date));
+    // помечаем замеры одной даты: это не динамика, а два измерения одного дня
+    const byDate = {};
+    for (const m of list) (byDate[m.date] ||= []).push(m);
+    for (const m of list) m.sameDay = byDate[m.date].length > 1;
+  }
+  cache = { rev: state.rev, series: map, list: null };
+  return map;
+}
+
 export function seriesFor(key) {
-  const list = state.meas
-    .filter(m => m.key === key && m.date)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map(m => ({ ...m, status: statusOf(m.value, m.refLow, m.refHigh) }));
-  // помечаем замеры одной даты: это не динамика, а два измерения одного дня
-  const byDate = {};
-  for (const m of list) (byDate[m.date] ||= []).push(m);
-  for (const m of list) m.sameDay = byDate[m.date].length > 1;
-  return list;
+  return allSeries().get(key) || [];
 }
 
 /* Сколько в серии по-настоящему разных дней — по нему решаем, есть ли динамика вообще */
@@ -324,14 +363,15 @@ export function distinctDays(series) {
 }
 
 export function markerKeys() {
-  return [...new Set(state.meas.map(m => m.key))];
+  return [...allSeries().keys()];
 }
 
 /* Список для вкладки «Показатели»: сначала то, что вне нормы, потом ровное, потом протухшее. */
 export function markerList() {
+  const map = allSeries();
+  if (cache.list) return cache.list;
   const out = [];
-  for (const key of markerKeys()) {
-    const s = seriesFor(key);
+  for (const [key, s] of map) {
     if (!s.length) continue;
     const last = s[s.length - 1];
     const prev = s.length > 1 ? s[s.length - 2] : null;
@@ -345,20 +385,30 @@ export function markerList() {
       count: s.length, last, prev, status: st, daysOld,
       stale: daysOld > 730,
       delta: prev ? +(last.value - prev.value).toFixed(2) : null,
+      deltaTone: prev ? changeTone(key, prev.value, last.value, last.refLow, last.refHigh) : 'flat',
       series: s,
     });
   }
   const rank = { out: 0, edge: 1, ok: 2, unknown: 3 };
-  return out.sort((a, b) => {
+  out.sort((a, b) => {
     if (a.stale !== b.stale) return a.stale ? 1 : -1;
     if (rank[a.status] !== rank[b.status]) return rank[a.status] - rank[b.status];
     return b.count - a.count;
   });
+  cache.list = out;
+  return out;
 }
 
 export function attentionList() { return markerList().filter(m => !m.stale && (m.status === 'out' || m.status === 'edge')); }
 
-/* Что сдвинулось за последний год — для Сводки */
+/* Что действительно сдвинулось — для Сводки.
+   Три фильтра, и все три нужны. Без них два бланка, сданные подряд в разных
+   лабораториях, выглядят как «изменение за год», хотя тело за сутки не менялось:
+   1) между замерами должно пройти хотя бы полтора месяца;
+   2) сдвиг должен превышать естественный разброс метода (RCV);
+   3) сравниваем с самым старым замером внутри последнего года, а не с чем попало. */
+const MIN_GAP_DAYS = 45;
+
 export function shifts(limit = 3) {
   const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
   return markerList()
@@ -367,9 +417,13 @@ export function shifts(limit = 3) {
       const past = m.series.filter(x => x.date < yearAgo);
       const base = past.length ? past[past.length - 1] : m.series[0];
       const change = base && base.value ? (m.last.value - base.value) / Math.abs(base.value) : 0;
-      return { ...m, base, change };
+      const gapDays = base ? (Date.parse(m.last.date) - Date.parse(base.date)) / 86400000 : 0;
+      const sig = base ? changeSignificance(m.key, base.value, m.last.value) : null;
+      return { ...m, base, change, gapDays, sig };
     })
-    .filter(m => Math.abs(m.change) > 0.08 || m.status !== 'ok')
+    .filter(m => m.gapDays >= MIN_GAP_DAYS)
+    .filter(m => m.sig?.significant !== false)
+    .filter(m => Math.abs(m.change) > 0.08)
     .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
     .slice(0, limit);
 }
@@ -381,6 +435,29 @@ export function changeSignificance(key, from, to) {
   const percent = ((to - from) / Math.abs(from)) * 100;
   const rcv = RCV[key] ?? null;
   return { percent, rcv, significant: rcv == null ? null : Math.abs(percent) >= rcv };
+}
+
+/* Цвет изменения по смыслу, а не по знаку.
+   «Вверх» само по себе не хорошо и не плохо: для ЛПВП рост — это хорошо,
+   для ЛПНП — плохо. Считаем, приблизилось значение к норме или ушло от неё.
+   Если сдвиг меньше естественного разброса метода — цвета нет вовсе. */
+export function changeTone(key, from, to, refLow, refHigh) {
+  const a = Number(from), b = Number(to);
+  if (!isFinite(a) || !isFinite(b) || a === b) return 'flat';
+  const sig = changeSignificance(key, a, b);
+  if (sig.significant === false) return 'flat';
+  const off = (v) => Math.max(0, (refLow ?? -Infinity) - v) + Math.max(0, v - (refHigh ?? Infinity));
+  const dA = off(a), dB = off(b);
+  if (!isFinite(dA) || !isFinite(dB)) return 'flat';
+  if (dB < dA) return 'better';
+  if (dB > dA) return 'worse';
+  return 'flat';
+}
+
+/* Замеры из разных лабораторий сравнивать в лоб нельзя: методы и калибровка разные.
+   Возвращает список лабораторий, если их в линии больше одной. */
+export function labsIn(series) {
+  return [...new Set(series.map(m => (m.lab || '').trim()).filter(Boolean))];
 }
 
 /* Что пора пересдать — сроки из рекомендаций, где они есть */
@@ -545,7 +622,14 @@ export function fmtRef(m) {
   if (m.refLow != null) return `от ${trim(m.refLow)}`;
   return 'не указана';
 }
-export const trim = (n) => (Math.round(Number(n) * 100) / 100).toString();
+/* Округление под величину числа: у ТТГ и hs-СРБ значащие цифры живут после
+   второго знака, и «0.64» вместо 0.636 — уже потеря смысла. */
+export const trim = (n) => {
+  const v = Number(n);
+  if (!isFinite(v)) return String(n ?? '');
+  const digits = Math.abs(v) < 1 ? 3 : 2;
+  return (Math.round(v * 10 ** digits) / 10 ** digits).toString();
+};
 
 const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 export function ruDate(iso) {

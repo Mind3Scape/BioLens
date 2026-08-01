@@ -1,14 +1,20 @@
 /* BioLens — единственный файл стилей.
-   Каркас: белый, чёрный, золото. Цветом говорят только данные. */
+   Каркас чёрно-белый. Цвет несёт ровно один смысл — состояние показателя:
+   зелёный «в норме», оранжевый «у границы», красный «вне нормы».
+   Ничего декоративного цветом не красим: это медицинское приложение. */
 
 *{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
 
 :root{
-  --canvas:#F1F2F5; --surface:#FFFFFF; --field:#F4F4F2;
+  --canvas:#F1F2F5; --surface:#FFFFFF; --field:#F1F2F4;
   --ink:#15161B; --ink2:#5B5D66; --ink3:#8D909A; --ink4:#B0B3BB;
   --hair:rgba(21,22,27,0.07); --hair2:rgba(21,22,27,0.12);
-  --gold:#EF9F14; --gold-lt:#FEDE34; --gold-ink:#8A6400; --gold-soft:rgba(247,206,74,0.20);
-  --warn:#B0663A; --warn-soft:rgba(176,102,58,0.12);
+
+  /* светофор состояния — единственный цвет в приложении */
+  --ok:#12874E;   --ok-dot:#17A860;  --ok-soft:rgba(23,168,96,0.13);
+  --edge:#C05600; --edge-dot:#E1720B;--edge-soft:rgba(225,114,11,0.13);
+  --bad:#C0271A;  --bad-dot:#DC3223; --bad-soft:rgba(220,50,35,0.12);
+
   --shadow:0 6px 20px rgba(21,22,27,0.06);
   --safe-b:env(safe-area-inset-bottom,0px);
 }
@@ -16,7 +22,11 @@ html[data-theme="dark"]{
   --canvas:#0B0C0F; --surface:#1B1C21; --field:#26272D;
   --ink:#F4F5F7; --ink2:#A2A5AD; --ink3:#7C7F88; --ink4:#5A5D67;
   --hair:rgba(255,255,255,0.08); --hair2:rgba(255,255,255,0.15);
-  --warn:#C77E52; --warn-soft:rgba(199,126,82,0.15);
+
+  --ok:#3DD183;   --ok-dot:#3DD183;  --ok-soft:rgba(61,209,131,0.16);
+  --edge:#FF9F45; --edge-dot:#FF9F45;--edge-soft:rgba(255,159,69,0.16);
+  --bad:#FF7062;  --bad-dot:#FF7062; --bad-soft:rgba(255,112,98,0.15);
+
   --shadow:0 6px 20px rgba(0,0,0,0.35);
 }
 
@@ -24,17 +34,8 @@ html,body{height:100%}
 body{
   font-family:-apple-system,"SF Pro Display","SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;
   color:var(--ink);background:var(--canvas);
-  background-image:
-    radial-gradient(420px 300px at 8% 0%, rgba(254,222,52,0.10), transparent 70%),
-    radial-gradient(460px 320px at 96% 12%, rgba(239,159,20,0.07), transparent 70%);
-  background-attachment:fixed;
   font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;
   overflow:hidden;
-}
-html[data-theme="dark"] body{
-  background-image:
-    radial-gradient(420px 300px at 8% 0%, rgba(239,159,20,0.14), transparent 70%),
-    radial-gradient(460px 320px at 96% 14%, rgba(120,130,160,0.12), transparent 70%);
 }
 
 #app{height:100%;display:flex;flex-direction:column;max-width:640px;margin:0 auto;position:relative}
@@ -73,9 +74,11 @@ b,strong{font-weight:680}
 /* ── карточки ── */
 .card{background:var(--surface);border-radius:22px;padding:15px 16px;box-shadow:var(--shadow);margin-bottom:12px}
 .card.flat{box-shadow:0 2px 8px rgba(21,22,27,0.05)}
+/* пояснения в карточках — это текст, который надо читать, а не подпись мелким серым */
+.card.flat .sm,.card .sm.read{color:var(--ink2);font-size:13px}
 .card.tap{cursor:pointer}
 .card.tap:active{transform:scale(0.99)}
-.card.gold{border:1px solid rgba(239,159,20,0.32);background:linear-gradient(180deg,rgba(254,222,52,0.10),var(--surface) 55%)}
+.card.note{border:1px solid var(--hair2)}
 .row{display:flex;align-items:center;gap:11px}
 .grow{flex:1;min-width:0}
 .divide{height:1px;background:var(--hair);margin:11px -16px}
@@ -83,28 +86,37 @@ b,strong{font-weight:680}
 .stack>*+*{margin-top:10px}
 
 /* ── ИИ-блок ── */
-.ai{position:relative;overflow:hidden;background:#15161B;color:#fff;border-radius:24px;padding:16px 17px;margin-bottom:12px}
+.ai{background:#15161B;color:#fff;border-radius:22px;padding:16px 17px;margin-bottom:12px}
 html[data-theme="dark"] .ai{background:#25262C}
-.ai:after{content:"";position:absolute;inset:0;pointer-events:none;background:
-  radial-gradient(220px 150px at 88% 0%, rgba(254,222,52,0.22), transparent 70%),
-  radial-gradient(200px 150px at 5% 100%, rgba(239,159,20,0.16), transparent 70%)}
-.ai .hd{display:flex;align-items:center;gap:8px;position:relative;z-index:1}
+.ai .hd{display:flex;align-items:center;gap:8px}
 .ai .hd .t{font-size:10.5px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;color:rgba(255,255,255,0.55)}
-.ai p{position:relative;z-index:1;margin-top:9px;font-size:14.5px;line-height:1.55;letter-spacing:-0.2px;color:rgba(255,255,255,0.92)}
-.ai p b{color:var(--gold-lt);font-weight:700}
-.ai .src{position:relative;z-index:1;margin-top:11px;display:flex;gap:6px;flex-wrap:wrap}
+.ai p{margin-top:9px;font-size:14.5px;line-height:1.55;letter-spacing:-0.2px;color:rgba(255,255,255,0.92)}
+.ai p b{color:#fff;font-weight:750}
+.ai .src{margin-top:11px;display:flex;gap:6px;flex-wrap:wrap}
 .schip{font-size:11px;font-weight:600;color:rgba(255,255,255,0.72);background:rgba(255,255,255,0.10);
   border:1px solid rgba(255,255,255,0.12);padding:5px 9px;border-radius:99px;display:flex;align-items:center;gap:5px}
 
-/* ── статусы данных ── */
-.dot{width:9px;height:9px;min-width:9px;border-radius:99px;background:var(--ink3)}
-.dot.edge{background:var(--gold)}
-.dot.out{background:var(--warn)}
-.dot.unknown{background:var(--ink4);opacity:.45}
+/* ── статусы данных ──
+   Один язык на всё приложение: зелёный — в норме, оранжевый — у границы,
+   красный — вне нормы, серый — норма неизвестна. Рядом с цветом всегда есть
+   слово или число: цвет ускоряет чтение, но не остаётся единственным сигналом. */
+.dot{width:9px;height:9px;min-width:9px;border-radius:99px;background:var(--ok-dot)}
+.dot.edge{background:var(--edge-dot)}
+.dot.out{background:var(--bad-dot)}
+.dot.unknown{background:var(--ink4)}
+.c-ok{color:var(--ok)} .c-edge{color:var(--edge)} .c-out{color:var(--bad)}
+
+/* тег состояния: слово + цвет */
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:750;letter-spacing:-0.1px;
+  padding:4px 9px;border-radius:99px;background:var(--field);color:var(--ink2);white-space:nowrap}
+.tag.ok{background:var(--ok-soft);color:var(--ok)}
+.tag.edge{background:var(--edge-soft);color:var(--edge)}
+.tag.out{background:var(--bad-soft);color:var(--bad)}
+
+/* изменение: цвет по смыслу — ближе к норме или дальше от неё */
 .delta{font-size:11.5px;font-weight:700;color:var(--ink3);white-space:nowrap}
-.delta.up{color:var(--gold-ink)} .delta.down{color:var(--warn)}
-html[data-theme="dark"] .delta.up{color:var(--gold-lt)}
-.doubt{border-bottom:2px dashed rgba(239,159,20,0.75);padding-bottom:1px}
+.delta.better{color:var(--ok)} .delta.worse{color:var(--bad)}
+.doubt{border-bottom:1.5px dashed var(--edge);padding-bottom:1px}
 
 /* ── управление ── */
 .btn{height:50px;border-radius:99px;background:var(--ink);color:var(--surface);display:flex;align-items:center;
@@ -116,7 +128,7 @@ html[data-theme="dark"] .delta.up{color:var(--gold-lt)}
 .btn[disabled]{opacity:.45;pointer-events:none}
 .mini{font-size:12.5px;font-weight:700;color:var(--ink);background:var(--field);padding:8px 13px;border-radius:99px;
   border:none;cursor:pointer;font-family:inherit;white-space:nowrap}
-.mini.warn{color:var(--warn)}
+.mini.warn{color:var(--bad)}
 .segs{display:flex;gap:4px;background:rgba(21,22,27,0.05);border-radius:99px;padding:3px;margin-bottom:12px}
 .segs.scroll{overflow-x:auto;scrollbar-width:none}
 .segs.scroll::-webkit-scrollbar{display:none}
@@ -129,13 +141,15 @@ html[data-theme="dark"] .segs{background:rgba(255,255,255,0.07)}
 .chip{font-size:12.5px;font-weight:620;color:var(--ink2);background:var(--surface);border:1px solid var(--hair);
   padding:8px 12px;border-radius:99px;cursor:pointer;font-family:inherit}
 .chip.on{background:var(--ink);color:var(--surface);border-color:transparent}
-.chip.gold{background:var(--gold-soft);border-color:rgba(239,159,20,0.28);color:var(--gold-ink)}
-html[data-theme="dark"] .chip.gold{color:var(--gold-lt)}
+.chip.ok{background:var(--ok-soft);border-color:transparent;color:var(--ok);font-weight:750}
+.chip.edge{background:var(--edge-soft);border-color:transparent;color:var(--edge);font-weight:750}
+.chip.out{background:var(--bad-soft);border-color:transparent;color:var(--bad);font-weight:750}
+.chip.off{opacity:.55}
 
 input[type=text],input[type=password],input[type=number],input[type=date],textarea,select{
   width:100%;font-family:inherit;font-size:15px;color:var(--ink);background:var(--field);border:1px solid transparent;
   border-radius:14px;padding:12px 13px;outline:none}
-input:focus,textarea:focus,select:focus{border-color:rgba(239,159,20,0.55);background:var(--surface)}
+input:focus,textarea:focus,select:focus{border-color:var(--ink3);background:var(--surface)}
 label.lab{display:block;font-size:12px;font-weight:700;color:var(--ink3);margin:0 0 6px 3px}
 
 .tog{width:48px;height:29px;min-width:48px;border-radius:99px;background:rgba(21,22,27,0.14);position:relative;
@@ -173,8 +187,8 @@ html[data-theme="dark"] .dock{background:rgba(30,31,37,0.82);box-shadow:0 10px 3
 
 /* ── прогресс ── */
 .prog{height:5px;border-radius:99px;background:rgba(21,22,27,0.08);overflow:hidden}
-.prog i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--gold),var(--gold-lt));transition:width .3s}
-.spin{width:18px;height:18px;border-radius:99px;border:2px solid var(--hair2);border-top-color:var(--gold);
+.prog i{display:block;height:100%;border-radius:99px;background:var(--ink);transition:width .3s}
+.spin{width:18px;height:18px;border-radius:99px;border:2px solid var(--hair2);border-top-color:var(--ink);
   animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
