@@ -28,7 +28,8 @@ function skeleton() {
     docs: S.state.docs.filter(d => !d.demo).map(d => ({
       i: d.id, t: d.title, y: d.date, k: d.type, l: d.lab, s: d.status,
       c: d.conclusion || null, n: d.note || null, f: d.fileName || null, m: d.markersCount || 0,
-      fd: d.fileDate || null,
+      fd: d.fileDate || null, pn: d.patientName || null, sg: d.markerSig || null,
+      pdf: d.isPdf ? 1 : 0, pc: d.pageCount || 0,
     })),
     meas: S.state.meas.filter(m => !m.demo).map(m => ({
       i: m.id, d: m.docId, k: m.key, t: m.title, r: m.nameRaw,
@@ -44,9 +45,14 @@ function skeleton() {
 
 function restoreSkeleton(data) {
   const docs = (data.docs || []).map(d => ({
-    id: d.i, blobId: null, fileName: d.f, addedAt: data.at, fileDate: d.fd || null,
-    status: d.s || 'ready', type: d.k, title: d.t, date: d.y, dateConfidence: 1,
+    id: d.i, blobId: null, pages: [], fileName: d.f, addedAt: data.at, fileDate: d.fd || null,
+    /* Статусы, требующие работы очереди, при восстановлении не воскрешаем:
+       файла на этом устройстве нет, и разбор упал бы с невнятной ошибкой. */
+    status: ['queued', 'reading', 'error'].includes(d.s) ? 'needs-file' : (d.s || 'ready'),
+    type: d.k, title: d.t, date: d.y, dateConfidence: 1,
     lab: d.l, conclusion: d.c, note: d.n, markersCount: d.m, imageLost: true,
+    patientName: d.pn || null, markerSig: d.sg || null,
+    isPdf: !!d.pdf, pageCount: d.pc || 0, raw: d.raw || null,
   }));
   const meas = (data.meas || []).map(m => ({
     id: m.i, docId: m.d, key: m.k, title: m.t, nameRaw: m.r,
@@ -63,6 +69,10 @@ function restoreSkeleton(data) {
 
 /* ── облако Телеграма ──────────────────────────────────────── */
 
+/* Запись идёт в ДВА поколения по очереди: пока пишется новое, старое остаётся
+   целым. Мета переключается последним действием и только после проверки —
+   раньше обрыв в середине уничтожал прошлую копию, а непрошедшая запись меты
+   давала бодрое «Копия сохранена» при нечитаемом архиве. */
 export async function saveToCloud() {
   if (!TG.inTelegram()) return { ok: false, reason: 'нет Телеграма' };
   const data = skeleton();
@@ -73,17 +83,30 @@ export async function saveToCloud() {
     return { ok: false, reason: 'архив перерос облако Телеграма — сохрани копию файлом' };
   }
 
-  for (let i = 0; i < chunks.length; i++) {
-    const ok = await TG.cloudSet(keyOf(i), chunks[i]);
-    if (!ok) return { ok: false, reason: 'облако Телеграма не приняло копию' };
-  }
-  await TG.cloudSet(KEY_META, JSON.stringify({
-    n: chunks.length, at: data.at, docs: data.docs.length, meas: data.meas.length, meals: data.meals.length,
-  }));
+  const prev = await cloudInfo();
+  const gen = prev?.g === 'b' ? 'a' : 'b';        // пишем в свободное поколение
+  const key = (i) => `bk${gen}_${i}`;
 
-  // подчистить хвост прошлой, более длинной копии
+  for (let i = 0; i < chunks.length; i++) {
+    if (!await TG.cloudSet(key(i), chunks[i])) {
+      return { ok: false, reason: 'облако Телеграма не приняло копию — прошлая копия цела' };
+    }
+  }
+  const meta = {
+    g: gen, n: chunks.length, at: data.at, len: json.length,
+    docs: data.docs.length, meas: data.meas.length, meals: data.meals.length,
+  };
+  if (!await TG.cloudSet(KEY_META, JSON.stringify(meta))) {
+    return { ok: false, reason: 'облако не приняло опись копии — прошлая копия цела' };
+  }
+
+  // теперь можно убрать прошлое поколение и хвост старого формата
   const keys = await TG.cloudKeys();
-  const stale = keys.filter(k => k.startsWith('bk_') && k !== KEY_META && +k.slice(3) >= chunks.length);
+  const stale = keys.filter(k => k !== KEY_META && (
+    k.startsWith('bk_') ||
+    (k.startsWith(`bk${gen === 'a' ? 'b' : 'a'}_`)) ||
+    (k.startsWith(`bk${gen}_`) && +k.slice(4) >= chunks.length)
+  ));
   if (stale.length) await TG.cloudRemove(stale);
 
   db.saveSettings({ lastCloudBackup: data.at, cloudBytes: json.length });
@@ -100,14 +123,19 @@ export async function cloudInfo() {
 export async function loadFromCloud() {
   const meta = await cloudInfo();
   if (!meta?.n) return null;
-  const keys = Array.from({ length: meta.n }, (_, i) => keyOf(i));
+  const keys = Array.from({ length: meta.n }, (_, i) => meta.g ? `bk${meta.g}_${i}` : keyOf(i));
   const parts = [];
   // getItems берёт пачками, не будем испытывать лимиты — по 20 ключей
   for (let i = 0; i < keys.length; i += 20) {
     const got = await TG.cloudGetMany(keys.slice(i, i + 20));
-    for (const k of keys.slice(i, i + 20)) parts.push(got[k] || '');
+    for (const k of keys.slice(i, i + 20)) {
+      if (got[k] == null || got[k] === '') return null;   // дырка в копии — лучше честно ничего
+      parts.push(got[k]);
+    }
   }
-  try { return JSON.parse(parts.join('')); } catch { return null; }
+  const text = parts.join('');
+  if (meta.len && text.length !== meta.len) return null;   // копия неполная
+  try { return JSON.parse(text); } catch { return null; }
 }
 
 export async function restoreFromCloud() {
@@ -130,7 +158,7 @@ export async function restoreFromCloud() {
 
 export async function forgetCloud() {
   const keys = await TG.cloudKeys();
-  const mine = keys.filter(k => k.startsWith('bk_'));
+  const mine = keys.filter(k => /^bk[ab]?_/.test(k) || k === KEY_META);
   if (mine.length) await TG.cloudRemove(mine);
   db.saveSettings({ lastCloudBackup: null, cloudBytes: 0 });
 }
@@ -153,11 +181,21 @@ export function scheduleCloudSave() {
 export async function exportFile({ withImages = true } = {}) {
   const data = skeleton();
   data.full = withImages;
+  // ответ модели нужен, чтобы «Это мои анализы» работало и после переезда
+  const rawById = new Map(S.state.docs.filter(d => !d.demo && d.raw).map(d => [d.id, d.raw]));
+  for (const d of data.docs) if (rawById.has(d.i)) d.raw = rawById.get(d.i);
   if (withImages) {
     data.images = {};
-    for (const d of S.state.docs.filter(x => !x.demo && x.blobId)) {
-      const url = await db.getBlobDataUrl(d.blobId);
-      if (url) data.images[d.id] = url;
+    /* Раньше сохранялась только первая страница: у лабораторной выписки на
+       12 страниц «полная копия со снимками» тихо теряла одиннадцать. */
+    for (const d of S.state.docs.filter(x => !x.demo)) {
+      const pages = (d.pages && d.pages.length) ? d.pages : (d.blobId ? [d.blobId] : []);
+      const urls = [];
+      for (const b of pages) {
+        const url = await db.getBlobDataUrl(b);
+        if (url) urls.push(url);
+      }
+      if (urls.length) data.images[d.id] = urls;
     }
     for (const m of S.state.meals.filter(x => !x.demo && x.blobId)) {
       const url = await db.getBlobDataUrl(m.blobId);
@@ -184,12 +222,15 @@ export async function importFile(file) {
 
   for (const d of docs) {
     if (haveDocs.has(d.id)) continue;
-    if (images[d.id]) {
-      const blob = await (await fetch(images[d.id])).blob();
-      d.blobId = db.uid('b');
-      await db.putBlob(d.blobId, blob);
-      d.imageLost = false;
+    const shots = images[d.id] ? (Array.isArray(images[d.id]) ? images[d.id] : [images[d.id]]) : [];
+    for (const url of shots) {
+      const blob = await (await fetch(url)).blob();
+      const id = db.uid('b');
+      await db.putBlob(id, blob);
+      d.pages.push(id);
     }
+    if (d.pages.length) { d.blobId = d.pages[0]; d.imageLost = false; }
+    if (d.status === 'needs-file' && d.pages.length) d.status = 'queued';
     await db.put('docs', d);
   }
   for (const m of meas) if (!haveMeas.has(m.id)) await db.put('meas', m);

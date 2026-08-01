@@ -32,9 +32,9 @@ export function summary(app) {
   const ready = S.state.docs.filter(d => d.status === 'ready');
   const span = S.yearsSpan();
   const queue = S.state.docs.filter(d => ['queued', 'reading'].includes(d.status)).length;
-  const needsAttention = S.state.docs.filter(d => ['needs-date', 'error', 'skipped', 'duplicate', 'foreign'].includes(d.status)).length;
+  const needsAttention = S.state.docs.filter(d => ['needs-date', 'error', 'skipped', 'duplicate', 'foreign', 'needs-file'].includes(d.status) || (d.status === 'ready' && d.pageErrors?.length)).length;
 
-  if (!ready.length && !queue) {
+  if (!ready.length && !queue && !needsAttention) {
     return head('BioLens', '') + emptyBlock('camera', 'Начни с того, что есть',
       'Закинь всё подряд — скриншоты анализов, фото бланков и <b>PDF из лаборатории</b>. Страницы PDF разберу по очереди прямо на телефоне. Даже <b>пять документов</b> уже дадут первую линию.',
       `<button class="btn" data-act="add">${icon('camera', 'ico s')}Закинуть скриншоты</button>
@@ -166,7 +166,7 @@ export function markers(app) {
 
   const last = S.state.docs.filter(d => d.status === 'ready' && d.date).sort((a, b) => b.date.localeCompare(a.date))[0];
 
-  let html = head('Показатели', `${list.length} маркеров${last ? ` · последний забор ${S.ruShort(last.date)}` : ''}`, avatarBtn + addBtn);
+  let html = head('Показатели', `${list.length} ${plural(list.length, 'показатель', 'показателя', 'показателей')}${last ? ` · последний забор ${S.ruShort(last.date)}` : ''}`, avatarBtn + addBtn);
   html += `<div class="segs scroll">${Object.entries(groups).map(([k, t]) =>
     `<button class="seg ${filter === k ? 'on' : ''}" data-act="filter" data-group="${k}">${esc(t)}</button>`).join('')}</div>`;
 
@@ -184,7 +184,7 @@ function row(m) {
   const ref = (m.last.refLow != null || m.last.refHigh != null) ? `норма ${S.fmtRef(m.last)}` : 'норма не указана';
   const sub = m.stale
     ? `последний раз ${S.ruDate(m.last.date)}`
-    : `${ref}${m.last.refSource === 'типовая' ? ' (типовая)' : ''} · ${m.count} ${plural(m.count, 'замер', 'замера', 'замеров')}`;
+    : `${ref}${m.last.refSource === 'типовая' ? ' (общая для взрослых)' : ''} · ${m.count} ${plural(m.count, 'замер', 'замера', 'замеров')}`;
   const st = m.stale ? 'unknown' : m.status;
   return `<div class="it" data-act="marker" data-key="${esc(m.key)}">
     ${statusDot(st)}
@@ -371,7 +371,9 @@ export function markerDetail(app) {
   }).join('');
   html += `</div>`;
 
-  html += `<div class="disc">Это не диагноз. Границы нормы взяты из бланка лаборатории — обсуди с врачом.</div>`;
+  html += `<div class="disc">${last.refSource === 'типовая'
+    ? 'Это не диагноз. Границ в бланке не было — я взял общие для взрослых, у твоей лаборатории они могут отличаться. Обсуди с врачом.'
+    : 'Это не диагноз. Границы нормы — из бланка лаборатории. Обсуди с врачом.'}</div>`;
   return html;
 }
 
@@ -397,7 +399,7 @@ export function timeline(app) {
   const shown = all.filter(inKind);
 
   // документы, которым нужно внимание, показываем отдельно и всегда — они не должны теряться
-  const pending = shown.filter(d => ['queued', 'reading', 'needs-date', 'error', 'skipped', 'duplicate', 'foreign'].includes(d.status));
+  const pending = shown.filter(d => ['queued', 'reading', 'needs-date', 'error', 'skipped', 'duplicate', 'foreign', 'needs-file'].includes(d.status));
   const done = shown.filter(d => d.status === 'ready');
 
   const ready = all.filter(d => d.status === 'ready').length;
@@ -448,6 +450,20 @@ export function timeline(app) {
   return html;
 }
 
+/* Сырое сообщение от модели или браузера человеку ничего не говорит */
+function humanFail(err) {
+  const m = String(err || '');
+  if (/402|не хватает средств/i.test(m)) return 'На счету OpenRouter кончились средства — пополни, и я дочитаю.';
+  if (/401|не принят/i.test(m)) return 'Ключ OpenRouter не принят. Проверь его в настройках.';
+  if (/429|Слишком часто/i.test(m)) return 'Модель попросила подождать — попробуй через пару минут.';
+  if (/оборвался/i.test(m)) return m;
+  if (/две минуты|таймаут|timeout/i.test(m)) return 'Модель не ответила вовремя. Попробуй ещё раз или выбери другую.';
+  if (/интернет|связи|network|fetch/i.test(m)) return 'Не было связи. Попробуй ещё раз.';
+  if (/пароль/i.test(m)) return m;
+  if (/JSON|Unexpected/i.test(m)) return 'Модель ответила не по форме. Попробуй ещё раз или возьми другую модель.';
+  return m || 'Не понял, что пошло не так. Попробуй ещё раз.';
+}
+
 const STATUS_BADGE = {
   queued:      ['в очереди', 'ждёт разбора'],
   reading:     ['читаю', 'сейчас разбираю'],
@@ -456,14 +472,16 @@ const STATUS_BADGE = {
   skipped:     ['не медицинский', 'ничего не сохранил'],
   duplicate:   ['дубль', 'такой документ уже есть'],
   foreign:     ['чужое имя', 'в бланке другой пациент'],
+  'needs-file':['нет снимка', 'вернулся из копии без картинки'],
 };
 
 function docRow(d, showBadge) {
   const ms = S.state.meas.filter(m => m.docId === d.id);
-  const worst = ms.reduce((acc, m) => {
-    const bad = (m.refLow != null && m.value < m.refLow) || (m.refHigh != null && m.value > m.refHigh);
-    return bad ? 'out' : (acc === 'out' ? 'out' : 'ok');
-  }, 'unknown');
+  /* Зелёная точка означает «проверено и в норме». Если границ нет ни у одного
+     показателя, проверять было нечем — точка должна остаться серой. */
+  const known = ms.filter(m => m.refLow != null || m.refHigh != null);
+  const worst = !known.length ? 'unknown'
+    : known.some(m => (m.refLow != null && m.value < m.refLow) || (m.refHigh != null && m.value > m.refHigh)) ? 'out' : 'ok';
   const badge = STATUS_BADGE[d.status];
   const parts = [
     d.date ? S.ruDate(d.date) : (badge ? null : 'дата не разобрана'),
@@ -516,7 +534,7 @@ export function docView(app) {
       <div class="row" style="margin-top:10px"><div class="grow sm">${esc(doc.fileName || '')}${doc.isPdf ? ` · PDF, ${doc.pageCount || pages.length} ${plural(doc.pageCount || pages.length, 'страница', 'страницы', 'страниц')}` : ''} · оригинал хранится всегда</div>
       <button class="mini warn" data-act="del-doc" data-id="${esc(doc.id)}">Удалить</button></div>
       ${doc.pagesSkipped ? `<div class="sm" style="margin-top:8px">Разобрал первые ${pages.length} — остальные ${doc.pagesSkipped} пропустил, чтобы не тратить лишнего</div>` : ''}
-      ${doc.pageErrors ? `<div class="sm" style="margin-top:8px;color:var(--bad)">Страницы ${doc.pageErrors.map(e => e.page).join(', ')} прочитать не вышло: ${esc(doc.pageErrors[0].error)}</div>` : ''}
+      ${doc.pageErrors ? `<div class="sm" style="margin-top:8px;color:var(--bad)">Страницы ${doc.pageErrors.map(e => e.page).join(', ')} прочитать не вышло: ${esc(humanFail(doc.pageErrors[0].error))}</div>` : ''}
     </div>`;
   } else {
     html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
@@ -556,6 +574,48 @@ export function docView(app) {
     </div>`;
   }
 
+  if (doc.status === 'error') {
+    html += `<div class="card note">
+      <div class="row">${icon('warning', 'ico s')}<div class="grow"><div class="nm" style="font-size:14px">Не смог прочитать</div></div></div>
+      <div class="sm" style="margin:8px 0 11px;line-height:1.5">${esc(humanFail(doc.error))}</div>
+      <div class="chips">
+        <button class="chip on" data-act="retry" data-id="${esc(doc.id)}">Попробовать ещё раз</button>
+        <button class="chip" data-act="add">Снять заново</button>
+      </div>
+    </div>`;
+  }
+
+  if (doc.status === 'skipped') {
+    html += `<div class="card note">
+      <div class="row">${icon('eye', 'ico s')}<div class="grow"><div class="nm" style="font-size:14px">Похоже, это не бланк</div></div></div>
+      <div class="sm" style="margin:8px 0 11px;line-height:1.5">Я не увидел здесь медицинского документа и ничего не сохранил. Если это всё-таки анализ — попробую ещё раз.</div>
+      <button class="chip on" data-act="retry" data-id="${esc(doc.id)}">Всё-таки разобрать</button>
+    </div>`;
+  }
+
+  if (doc.status === 'needs-file') {
+    html += `<div class="card note">
+      <div class="row">${icon('warning', 'ico s')}<div class="grow"><div class="nm" style="font-size:14px">Снимок остался на прежнем устройстве</div></div></div>
+      <div class="sm" style="margin:8px 0 11px;line-height:1.5">Этот документ пришёл из копии без картинки, и разобрать его заново нечем. Загрузи бланк снова — числа встанут на место.</div>
+      <button class="chip on" data-act="add">Загрузить снимок</button>
+    </div>`;
+  }
+
+  if (['queued', 'reading'].includes(doc.status)) {
+    html += `<div class="card flat"><div class="row"><div class="spin"></div>
+      <div class="grow"><div class="nm" style="font-size:14px">${doc.status === 'reading' ? 'Читаю прямо сейчас' : 'В очереди на разбор'}</div>
+        <div class="sm">${doc.readingPage ? `страница ${doc.readingPage.n} из ${doc.readingPage.of}` : 'можно свернуть приложение — разбор продолжится'}</div></div></div></div>`;
+  }
+
+  // документ, у которого часть страниц не прочиталась, — это не «разобрано»
+  if (doc.status === 'ready' && doc.pageErrors?.length) {
+    html += `<div class="card note">
+      <div class="row">${icon('warning', 'ico s')}<div class="grow"><div class="nm" style="font-size:14px">Прочитал не всё</div></div></div>
+      <div class="sm" style="margin:8px 0 11px;line-height:1.5">${doc.pageErrors.length} ${plural(doc.pageErrors.length, 'страница', 'страницы', 'страниц')} из ${doc.pageCount || '?'} не поддались, значит часть показателей сюда не попала.</div>
+      <button class="chip on" data-act="retry" data-id="${esc(doc.id)}">Дочитать</button>
+    </div>`;
+  }
+
   if (doc.conclusion) {
     html += `<div class="card"><div class="cap" style="padding:0 0 8px">Заключение</div>
       <div class="sm" style="font-size:14px;line-height:1.55;color:var(--ink)">${esc(doc.conclusion)}</div></div>`;
@@ -567,8 +627,8 @@ export function docView(app) {
         <div class="sm">Сверь с оригиналом выше — это десять секунд</div></div></div>
       ${doubts.map(m => `<div class="divide"></div>
         <div class="row"><div class="grow"><div class="nm" style="font-size:14px">${esc(m.title)}</div>
-          <div class="sm">в бланке ${esc(m.rawUnit || m.unit)}</div></div>
-          <input type="text" inputmode="decimal" value="${S.trim(m.value)}" data-fix="${esc(m.id)}" style="width:92px;text-align:right;font-weight:700">
+          <div class="sm">впиши, как напечатано в бланке${m.rawUnit || m.unit ? `, в ${esc(m.rawUnit || m.unit)}` : ''}${m.converted ? ` · в линии это будет ${S.trim(m.value)} ${esc(m.unit)}` : ''}</div></div>
+          <input type="text" inputmode="decimal" value="${S.trim(m.rawValue ?? m.value)}" data-fix="${esc(m.id)}" style="width:92px;text-align:right;font-weight:700">
           <button class="mini" data-act="confirm-meas" data-id="${esc(m.id)}">Ок</button></div>`).join('')}
     </div>`;
   }
@@ -581,7 +641,7 @@ export function docView(app) {
       return `<div class="it" data-act="marker" data-key="${esc(m.key)}">
         ${statusDot(st)}
         <div class="grow"><div class="nm">${esc(m.title)}</div>
-          <div class="sm">${m.refSource ? `норма ${esc(S.fmtRef(m))} (${esc(m.refSource)})` : 'норма не указана'}</div></div>
+          <div class="sm">${m.refSource ? `норма ${esc(S.fmtRef(m))} (${m.refSource === 'типовая' ? 'общая для взрослых' : 'бланк'})` : 'норма не указана'}${st !== 'unknown' ? ` · <b style="color:${toneVar(st)}">${statusWord(st, m.value, m.refLow, m.refHigh)}</b>` : ''}</div></div>
         <div class="val ${m.confidence < 0.75 ? 'doubt' : ''}">${S.trim(m.value)}<span class="unit">${esc(m.unit)}</span></div>
       </div>`;
     }).join('');
@@ -597,10 +657,10 @@ export function docView(app) {
 
 export function inbox(app) {
   const q = S.state.docs.filter(d => ['queued', 'reading'].includes(d.status));
-  const problems = S.state.docs.filter(d => ['needs-date', 'error', 'skipped', 'duplicate', 'foreign'].includes(d.status));
+  const problems = S.state.docs.filter(d => ['needs-date', 'error', 'skipped', 'duplicate', 'foreign', 'needs-file'].includes(d.status) || (d.status === 'ready' && d.pageErrors?.length));
   const recent = S.state.docs.filter(d => d.status === 'ready').slice(0, 6);
 
-  let html = backHead('Разбор', q.length ? `${S.state.queue.done} из ${S.state.queue.total || q.length}` : `${problems.length} требуют внимания`);
+  let html = backHead('Разбор', q.length ? `${S.state.queue.done} из ${S.state.queue.total || q.length}` : `${problems.length} ${plural(problems.length, 'документ ждёт', 'документа ждут', 'документов ждут')} тебя`);
 
   if (q.length) {
     const pct = S.state.queue.total ? Math.round(S.state.queue.done / S.state.queue.total * 100) : 5;
@@ -616,11 +676,13 @@ export function inbox(app) {
 
   for (const d of problems) {
     const kind = {
+      'ready': ['Прочитал не всё', `${(d.pageErrors || []).length} ${plural((d.pageErrors || []).length, 'страница', 'страницы', 'страниц')} не поддались — часть показателей не попала в архив`],
       'needs-date': ['Дата не читается', 'Без даты показатели не встают в линию'],
-      'error': ['Не смог прочитать', d.error || ''],
+      'error': ['Не смог прочитать', humanFail(d.error)],
       'skipped': ['Похоже, это не медицинский документ', 'Ничего не сохранил'],
       'duplicate': ['Дубль', 'Такой же документ за эту дату уже есть'],
       'foreign': ['В бланке другое имя', 'Числа не попали в линии — открой и подтверди, что это твоё'],
+      'needs-file': ['Снимок остался на прежнем устройстве', 'Числа есть, картинки нет — загрузи бланк заново'],
     }[d.status];
     html += `<div class="card">
       <div class="row">

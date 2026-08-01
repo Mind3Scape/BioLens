@@ -110,6 +110,9 @@ export async function processQueue(onTick, { model } = {}) {
     .sort((a, b) => (a.addedAt || '').localeCompare(b.addedAt || ''));
   state.queue = { total: queued.length, done: 0, running: true, errors: [] };
   for (const doc of queued) {
+    /* Документ мог быть удалён, пока очередь до него шла: ссылка в массиве
+       осталась бы живой, и запись вернула бы его вместе с числами обратно. */
+    if (!state.docs.includes(doc)) { state.queue.done++; continue; }
     try {
       doc.status = 'reading';
       onTick?.(doc);
@@ -133,15 +136,18 @@ export async function processQueue(onTick, { model } = {}) {
         if (i < pages.length - 1) await new Promise(r => setTimeout(r, 400));  // не давим на лимиты модели
       }
       doc.readingPage = null;
+      if (!state.docs.includes(doc)) continue;      // удалили, пока читали страницы
       if (!results.length) throw new Error(pageErrors[0]?.error || 'модель ничего не вернула');
       doc.pageErrors = pageErrors.length ? pageErrors : null;
       doc.pagesRead = results.length;
       await applyDocResult(doc, results.length > 1 ? mergePages(results) : results[0], usedModel);
     } catch (e) {
-      doc.status = 'error';
-      doc.error = e.message || String(e);
-      state.queue.errors.push({ id: doc.id, error: doc.error });
-      await db.put('docs', doc);
+      if (state.docs.includes(doc)) {
+        doc.status = 'error';
+        doc.error = e.message || String(e);
+        state.queue.errors.push({ id: doc.id, error: doc.error });
+        await db.put('docs', doc);
+      }
     }
     state.queue.done++;
     onTick?.(doc);
@@ -155,9 +161,28 @@ export async function processQueue(onTick, { model } = {}) {
    сфотографировать бланк жены или родителя, его числа молча встанут в твои
    линии и испортят всю картину. Имя из бланка модель читает всегда — здесь
    мы им наконец пользуемся. */
-const nameKey = (s) => (s || '').toLowerCase()
+const nameParts = (s) => (s || '').toLowerCase()
   .replace(/ё/g, 'е').replace(/[^а-яa-z\s]/gi, ' ').replace(/\s+/g, ' ').trim()
-  .split(' ').filter(w => w.length > 1).slice(0, 2).sort().join(' ');
+  .split(' ').filter(Boolean);
+
+/* Фамилия целиком + первая буква имени. В бланках одно и то же имя пишут
+   и «Иванов Иван Иванович», и «Иванов И.И.» — по полным словам это выглядело бы
+   как два разных человека, и свои же анализы уходили бы в «чужие». */
+const nameKey = (s) => {
+  const w = nameParts(s);
+  const surname = w.find(x => x.length > 2);
+  if (!surname) return '';
+  const rest = w.filter(x => x !== surname);
+  return surname + (rest.length ? '|' + rest[0][0] : '');
+};
+
+/* Совпадением считаем и случай, когда у одного имени инициала нет вовсе */
+function sameName(a, b) {
+  if (!a || !b) return true;
+  const [sa, ia] = a.split('|'), [sb, ib] = b.split('|');
+  if (sa !== sb) return false;
+  return !ia || !ib || ia === ib;
+}
 
 /* Чьё имя чаще всего встречается в архиве — тот и владелец.
    Разбираемый прямо сейчас документ из подсчёта исключаем: иначе первый же
@@ -180,7 +205,8 @@ function looksForeign(doc) {
   const mine = archiveOwner(doc.id);
   const theirs = nameKey(doc.patientName);
   if (!mine || !theirs) return false;          // сравнивать не с чем — не мешаем
-  return mine.key !== theirs;
+  if (mine.n < 2) return false;                // по одному документу владельца не назначаем
+  return !sameName(mine.key, theirs);
 }
 
 async function applyDocResult(doc, data, modelUsed, { trustPatient = false } = {}) {
@@ -192,6 +218,8 @@ async function applyDocResult(doc, data, modelUsed, { trustPatient = false } = {
     doc.title = 'Не медицинский документ';
     doc.note = 'Похоже, это не бланк и не снимок — ничего не сохранил';
     await db.put('docs', doc);
+    // старые числа обязаны уйти вместе со статусом, иначе экран говорит одно, а графики другое
+    await clearMeasurements(doc.id);
     return;
   }
 
@@ -204,8 +232,10 @@ async function applyDocResult(doc, data, modelUsed, { trustPatient = false } = {
   doc.dateConfidence = Number(data.date_confidence ?? 0);
 
   let date = normDate(data.date);
+  doc.mixedDates = data.mixedDates || null;
   if (!date) { doc.status = 'needs-date'; doc.date = null; }
   else { doc.date = date; doc.status = 'ready'; }
+
 
   /* Дубль — только если совпал СОСТАВ, а не количество строк. Раньше два разных
      анализа одного дня с одинаковым числом строк объявлялись дублем, и данные
@@ -228,13 +258,10 @@ async function applyDocResult(doc, data, modelUsed, { trustPatient = false } = {
   await db.put('docs', doc);
 
   // старые замеры этого документа стираем — перезалив должен быть чистым
-  const old = await db.byIndex('meas', 'docId', doc.id);
-  for (const m of old) await db.del('meas', m.id);
-  state.meas = state.meas.filter(m => m.docId !== doc.id);
-  touch();
+  await clearMeasurements(doc.id);
 
   // дубль и чужой бланк в линии не попадают: числа остаются в документе, но не в графиках
-  if (doc.status === 'duplicate' || doc.status === 'foreign') return;
+  if (['duplicate', 'foreign'].includes(doc.status)) return;
 
   const sex = db.settings().sex;
   /* Два разных названия из ОДНОГО бланка не могут быть одним показателем.
@@ -277,12 +304,13 @@ async function applyDocResult(doc, data, modelUsed, { trustPatient = false } = {
     const rec = {
       id: db.uid('m'), docId: doc.id, key,
       nameRaw: raw.name || '',
-      title: conv.unknownUnit && hit ? `${markerTitle(hit.key)} (${raw.unit})` : (hit ? markerTitle(key) : (raw.name || '')),
+      title: conv.unknownUnit && hit ? `${markerTitle(hit.key)} (${raw.unit})`
+        : (hit && !collided ? markerTitle(key) : (rawName || raw.name || '')),
       value: conv.value, unit: conv.unit || raw.unit || '',
       rawValue: Number(raw.value), rawUnit: raw.unit || '',
       converted: !!conv.converted, unknownUnit: !!conv.unknownUnit,
       refLow: refLow ?? null, refHigh: refHigh ?? null, refSource,
-      date: doc.date, lab: doc.lab || null,
+      date: normDate(raw._date) || doc.date, lab: doc.lab || null,
       confidence: Number(raw.confidence ?? 1), confirmed: Number(raw.confidence ?? 1) >= 0.75,
       matchExact: hit && !collided ? hit.exact : false,
       separated: collided,     // «не смешал с соседней строкой того же бланка»
@@ -299,27 +327,34 @@ function mergePages(pages) {
   const good = pages.filter(p => p && p.is_medical !== false);
   if (!good.length) return { is_medical: false };
   const first = (field) => good.map(p => p[field]).find(v => v != null && v !== '');
+  /* Каждый показатель помним вместе с датой СВОЕЙ страницы: подшивка бланков
+     за разные годы одним PDF — обычное дело, и раньше всё уезжало на дату
+     первой страницы. Дедуплицируем в пределах одной даты, а не всего файла. */
   const markers = [];
   const seen = new Set();
   for (const p of good) {
     for (const m of (p.markers || [])) {
-      const key = `${(m.name || '').toLowerCase().trim()}|${m.value}`;
+      const key = `${p.date || ''}|${(m.name || '').toLowerCase().trim()}|${m.value}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      markers.push(m);
+      markers.push(p.date ? { ...m, _date: p.date } : m);
     }
   }
+  /* Страницы с разными датами — это подшивка разных бланков, а не одна выписка.
+     Раньше всё получало дату первой страницы и вставало в график не туда. */
+  const dates = [...new Set(good.map(p => p.date).filter(Boolean))];
   const conclusions = good.map(p => p.conclusion).filter(Boolean);
   return {
     is_medical: true,
     doc_type: first('doc_type') || 'other',
     title: mergedTitle(good) || first('title') || 'Документ',
-    date: first('date') || null,
+    date: dates.length ? dates.slice().sort()[0] : (first('date') || null),
     date_confidence: Math.max(...good.map(p => Number(p.date_confidence || 0))),
     lab: first('lab') || null,
     patient_name: first('patient_name') || null,
     conclusion: conclusions.length ? [...new Set(conclusions)].join('\n\n') : null,
     note: good.map(p => p.note).filter(Boolean)[0] || null,
+    mixedDates: dates.length > 1 ? dates : null,
     markers,
   };
 }
@@ -335,6 +370,13 @@ function mergedTitle(pages) {
 }
 
 /* Состав бланка: по нему отличаем настоящий дубль от другого анализа того же дня. */
+async function clearMeasurements(docId) {
+  const old = await db.byIndex('meas', 'docId', docId);
+  for (const m of old) await db.del('meas', m.id);
+  state.meas = state.meas.filter(m => m.docId !== docId);
+  touch();
+}
+
 function markerSignature(markers) {
   const list = (markers || [])
     .map(m => `${(m.name || '').toLowerCase().trim()}=${m.value}`)
@@ -371,10 +413,22 @@ function normDate(s) {
    уже не спрашивая про имя. Второго обращения к модели не требуется. */
 export async function confirmPatient(docId) {
   const doc = state.docs.find(d => d.id === docId);
-  if (!doc?.raw) return false;
+  if (!doc) return { ok: false, reason: 'Документ не найден' };
   doc.patientConfirmed = true;
-  await applyDocResult(doc, doc.raw, doc.model, { trustPatient: true });
-  return true;
+  if (doc.raw) {
+    await applyDocResult(doc, doc.raw, doc.model, { trustPatient: true });
+    return { ok: true };
+  }
+  /* Копия из облака не несёт ответ модели: переразобрать нечего.
+     Честно говорим об этом и ставим документ в очередь, если снимок на месте. */
+  if ((doc.pages || []).length || doc.blobId) {
+    doc.status = 'queued';
+    await db.put('docs', doc);
+    return { ok: true, requeued: true };
+  }
+  doc.status = 'needs-file';
+  await db.put('docs', doc);
+  return { ok: false, reason: 'Числа этого бланка не сохранились в копии — загрузи снимок заново' };
 }
 
 export async function setDocDate(docId, date) {
@@ -388,10 +442,22 @@ export async function setDocDate(docId, date) {
   touch();
 }
 
-export async function fixMeasurement(measId, value) {
+/* Человек вводит число ТАК, КАК ОНО НАПЕЧАТАНО В БЛАНКЕ, — а в архиве значение
+   живёт в канонической единице. Раньше введённое число клалось в линию как есть:
+   витамин D «75 нмоль/л» из бланка становился 75 нг/мл вместо 30, креатинин
+   ошибался в 88 раз. Пересчитываем той же таблицей, что и при разборе. */
+export async function fixMeasurement(measId, rawValue) {
   const m = state.meas.find(x => x.id === measId);
   if (!m) return;
-  m.value = Number(value); m.confidence = 1; m.confirmed = true; m.editedByHuman = true;
+  const v = Number(rawValue);
+  if (!isFinite(v)) return;
+  const conv = m.key.startsWith('raw:')
+    ? { value: v, converted: false }
+    : toCanonical(m.key, v, m.rawUnit || m.unit);
+  m.rawValue = v;
+  m.value = isFinite(conv.value) ? conv.value : v;
+  m.converted = !!conv.converted;
+  m.confidence = 1; m.confirmed = true; m.editedByHuman = true;
   await db.put('meas', m);
   touch();
 }
@@ -577,18 +643,27 @@ export function dueList() {
 /* Активная цель по питанию — из анализов. Питание влияет далеко не на всё,
    поэтому список показателей здесь намеренно короткий. */
 const FOOD_LINKED = {
-  ldl:               { goal: 'снизить ЛПНП', watch: ['sat_fat_g', 'fiber_g', 'cholesterol_mg'] },
-  cholesterol_total: { goal: 'снизить общий холестерин', watch: ['sat_fat_g', 'fiber_g', 'cholesterol_mg'] },
-  triglycerides:     { goal: 'снизить триглицериды', watch: ['sugar_g', 'carbs_g', 'kcal'] },
-  glucose:           { goal: 'выровнять сахар', watch: ['sugar_g', 'carbs_g', 'fiber_g'] },
-  hba1c:             { goal: 'выровнять сахар', watch: ['sugar_g', 'carbs_g', 'fiber_g'] },
-  uric_acid:         { goal: 'снизить мочевую кислоту', watch: ['protein_g', 'sugar_g'] },
-  ferritin:          { goal: 'поднять железо', watch: ['iron_rich'] },
-  vitamin_d:         { goal: 'поднять витамин D', watch: [] },
+  ldl:               { dir: 'down', goal: 'снизить ЛПНП', watch: ['sat_fat_g', 'fiber_g', 'cholesterol_mg'] },
+  cholesterol_total: { dir: 'down', goal: 'снизить общий холестерин', watch: ['sat_fat_g', 'fiber_g', 'cholesterol_mg'] },
+  triglycerides:     { dir: 'down', goal: 'снизить триглицериды', watch: ['sugar_g', 'carbs_g', 'kcal'] },
+  glucose:           { dir: 'down', goal: 'выровнять сахар', watch: ['sugar_g', 'carbs_g', 'fiber_g'] },
+  hba1c:             { dir: 'down', goal: 'выровнять сахар', watch: ['sugar_g', 'carbs_g', 'fiber_g'] },
+  uric_acid:         { dir: 'down', goal: 'снизить мочевую кислоту', watch: ['protein_g', 'sugar_g'] },
+  ferritin:          { dir: 'up',   goal: 'поднять железо', watch: ['iron_rich'] },
+  vitamin_d:         { dir: 'up',   goal: 'поднять витамин D', watch: [] },
 };
 
+/* Цель по питанию обязана смотреть, в КАКУЮ сторону отклонение.
+   Без этой проверки высокий ферритин (перегрузка железом или воспаление)
+   давал совет «поднять железо», а низкий холестерин — «снизить холестерин». */
 export function foodGoal() {
-  const cands = markerList().filter(m => FOOD_LINKED[m.key] && (m.status === 'out' || m.status === 'edge'));
+  const cands = markerList().filter(m => {
+    const link = FOOD_LINKED[m.key];
+    if (!link || (m.status !== 'out' && m.status !== 'edge')) return false;
+    const tooHigh = m.last.refHigh != null && m.last.value >= m.last.refHigh - 0.0001;
+    const tooLow = m.last.refLow != null && m.last.value <= m.last.refLow + 0.0001;
+    return link.dir === 'down' ? tooHigh : tooLow;
+  });
   if (!cands.length) return null;
   const m = cands[0];
   const link = FOOD_LINKED[m.key];
@@ -617,7 +692,7 @@ export async function addMeal(file, { model } = {}) {
   try {
     const goal = foodGoal();
     const dataUrl = await db.getBlobDataUrl(blobId);
-    const { data } = await analyzeMeal(dataUrl, { model, goalHint: goal?.text || '' });
+    const { data } = await analyzeMeal(dataUrl, { model });
     if (data.is_food === false) {
       meal.status = 'skipped'; meal.title = 'Это не еда';
     } else {
@@ -693,7 +768,7 @@ export function buildContext({ maxMarkers = 120 } = {}) {
   lines.push('');
   lines.push('ПОКАЗАТЕЛИ (последний замер и вся история):');
   for (const m of markerList().slice(0, maxMarkers)) {
-    const hist = m.series.map(p => `${p.date}: ${p.value}`).join('; ');
+    const hist = m.series.map(p => `${p.date}: ${p.value}${p.lab ? ` (${p.lab})` : ''}`).join('; ');
     lines.push(`- ${m.title} [${m.unit}] норма ${fmtRef(m.last)} (${m.last.refSource || 'нет'}). Сейчас ${m.last.value} (${ruStatus(m.status)}), замеров ${m.count}. История: ${hist}`);
   }
   const total = markerList().length;

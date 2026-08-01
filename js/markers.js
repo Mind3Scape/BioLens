@@ -418,7 +418,10 @@ export function statusOf(value, low, high) {
   if (high != null && v > high) return 'out';
   const span = (high != null && low != null) ? (high - low) : null;
   const pad = (bound) => span && span > 0 ? span * 0.08 : Math.abs(Number(bound)) * 0.05;
-  if (low != null && v - low <= pad(low)) return 'edge';
+  /* Нижняя граница «0» — это не клиническая граница, а «снизу предела нет»
+     (АЛТ 0–41, ПСА 0–4, антитела 0–5.6). Без этой оговорки отличный результат
+     красился в оранжевое «у границы» и уезжал в «Требует внимания». */
+  if (low != null && low > 0 && v - low <= pad(low)) return 'edge';
   if (high != null && high - v <= pad(high)) return 'edge';
   return 'ok';
 }

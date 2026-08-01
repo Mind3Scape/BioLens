@@ -7,20 +7,23 @@
 
 :root{
   --canvas:#F1F2F5; --surface:#FFFFFF; --field:#F1F2F4;
-  --ink:#15161B; --ink2:#5B5D66; --ink3:#8D909A; --ink4:#B0B3BB;
+  /* Серые проверены на читаемость: мелкий текст держит 4.5:1 на обеих подложках.
+     Прежние #8D909A и #B0B3BB давали 3.2 и 1.9 — дисклеймер и подписи в списках
+     фактически не читались, а это медицинское приложение. */
+  --ink:#15161B; --ink2:#5B5D66; --ink3:#6A6D76; --ink4:#82858F;
   --hair:rgba(21,22,27,0.07); --hair2:rgba(21,22,27,0.12);
 
   /* светофор состояния — единственный цвет в приложении */
-  --ok:#12874E;   --ok-dot:#17A860;  --ok-soft:rgba(23,168,96,0.13);
-  --edge:#C05600; --edge-dot:#E1720B;--edge-soft:rgba(225,114,11,0.13);
-  --bad:#C0271A;  --bad-dot:#DC3223; --bad-soft:rgba(220,50,35,0.12);
+  --ok:#0F7343;   --ok-dot:#15984F;  --ok-soft:rgba(23,168,96,0.18);
+  --edge:#A34900; --edge-dot:#D2650A;--edge-soft:rgba(210,101,10,0.16);
+  --bad:#C0271A;  --bad-dot:#D02A1B; --bad-soft:rgba(220,50,35,0.13);
 
   --shadow:0 6px 20px rgba(21,22,27,0.06);
   --safe-b:env(safe-area-inset-bottom,0px);
 }
 html[data-theme="dark"]{
   --canvas:#0B0C0F; --surface:#1B1C21; --field:#26272D;
-  --ink:#F4F5F7; --ink2:#A2A5AD; --ink3:#7C7F88; --ink4:#5A5D67;
+  --ink:#F4F5F7; --ink2:#A2A5AD; --ink3:#9095A0; --ink4:#7C7F88;
   --hair:rgba(255,255,255,0.08); --hair2:rgba(255,255,255,0.15);
 
   --ok:#3DD183;   --ok-dot:#3DD183;  --ok-soft:rgba(61,209,131,0.16);
@@ -55,7 +58,7 @@ html.tg .toast{bottom:calc(92px + var(--tg-bottom, 0px))}
 h1{font-size:28px;font-weight:780;letter-spacing:-0.8px}
 h2{font-size:19px;font-weight:750;letter-spacing:-0.5px}
 .sub{font-size:12px;font-weight:600;color:var(--ink3);margin-top:2px}
-.cap{font-size:10.5px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;color:var(--ink4);padding:0 4px 8px}
+.cap{font-size:10.5px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;color:var(--ink3);padding:0 4px 8px}
 .sm{font-size:12.5px;color:var(--ink3);line-height:1.45}
 .nm{font-size:15px;font-weight:650;letter-spacing:-0.2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .val{font-size:16px;font-weight:750;letter-spacing:-0.4px}
@@ -66,7 +69,7 @@ b,strong{font-weight:680}
 /* ── шапка ── */
 .head{display:flex;align-items:center;gap:10px;padding:6px 2px 12px}
 .head .grow{flex:1;min-width:0}
-.rnd{width:36px;height:36px;min-width:36px;border-radius:99px;background:var(--surface);display:flex;align-items:center;
+.rnd{width:42px;height:42px;min-width:42px;border-radius:99px;background:var(--surface);display:flex;align-items:center;
   justify-content:center;color:var(--ink);box-shadow:0 3px 10px rgba(21,22,27,0.08);cursor:pointer;border:none}
 .rnd.dark{background:var(--ink);color:var(--surface)}
 .rnd:active{transform:scale(0.94)}
@@ -135,9 +138,9 @@ html[data-theme="dark"] .ai{background:#25262C}
 .segs{display:flex;gap:4px;background:rgba(21,22,27,0.05);border-radius:99px;padding:3px;margin-bottom:12px}
 .segs.scroll{overflow-x:auto;scrollbar-width:none}
 .segs.scroll::-webkit-scrollbar{display:none}
-.segs.scroll .seg{flex:0 0 auto;padding:8px 14px}
+.segs.scroll .seg{flex:0 0 auto;padding:11px 15px}
 html[data-theme="dark"] .segs{background:rgba(255,255,255,0.07)}
-.seg{flex:1;text-align:center;font-size:12.5px;font-weight:650;color:var(--ink2);padding:8px 4px;border-radius:99px;
+.seg{flex:1;text-align:center;font-size:12.5px;font-weight:650;color:var(--ink2);padding:11px 4px;border-radius:99px;
   cursor:pointer;border:none;background:none;font-family:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .seg.on{background:var(--surface);color:var(--ink);box-shadow:0 2px 7px rgba(21,22,27,0.09)}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
@@ -168,7 +171,7 @@ label.lab{display:block;font-size:12px;font-weight:700;color:var(--ink3);margin:
   border-radius:28px;box-shadow:0 10px 30px rgba(21,22,27,0.14), inset 0 0 0 1px rgba(255,255,255,0.7);
   display:flex;align-items:center;justify-content:space-around;padding:10px 4px 9px}
 html[data-theme="dark"] .dock{background:rgba(30,31,37,0.82);box-shadow:0 10px 30px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(255,255,255,0.09)}
-.tab{display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--ink4);font-size:10px;font-weight:650;
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--ink3);font-size:10px;font-weight:650;
   background:none;border:none;cursor:pointer;font-family:inherit;flex:1;padding:2px 0}
 .tab.on{color:var(--ink)}
 .ico{width:22px;height:22px;display:block;fill:currentColor}
@@ -211,7 +214,7 @@ html[data-theme="dark"] .dock{background:rgba(30,31,37,0.82);box-shadow:0 10px 3
 .composer{position:sticky;bottom:0;display:flex;gap:8px;align-items:flex-end;padding-top:8px;background:linear-gradient(transparent,var(--canvas) 30%)}
 
 /* ── прочее ── */
-.disc{font-size:11.5px;line-height:1.45;color:var(--ink4);text-align:center;padding:14px 12px 0}
+.disc{font-size:12px;line-height:1.5;color:var(--ink3);text-align:center;padding:14px 12px 0}
 .hero{display:flex;align-items:flex-end;gap:9px}
 .hero .big{font-size:46px;font-weight:800;letter-spacing:-2px;line-height:0.95}
 .hero .u{font-size:13px;font-weight:650;color:var(--ink3);padding-bottom:5px}

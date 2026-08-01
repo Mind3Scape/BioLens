@@ -4,7 +4,7 @@ import * as db from './db.js';
 import * as S from './store.js';
 import * as V from './views.js';
 import { $, $$, esc, toast, sheet, confirmSheet } from './ui.js';
-import { fetchModels, checkKey, summarize, askArchive, mealFeedback, chat } from './openrouter.js';
+import { fetchModels, checkKey, summarize, askArchive, mealFeedback, chat, VOICE_RULES } from './openrouter.js';
 import { scan } from './scan.js';
 import { fillDemo, clearDemo, hasDemo } from './demo.js';
 import * as TG from './telegram.js';
@@ -89,10 +89,25 @@ function applyTheme(mode) {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
 }
 
+/* Ссылки на снимки создаются на каждую перерисовку, а перерисовка идёт почти
+   на каждый клик. Без общего кэша память в WebView Телеграма росла десятками
+   мегабайт за минуту листания Хроники, и приложение перезагружалось само. */
+const blobUrls = new Map();
 async function hydrateImages(root) {
   for (const img of $$('img[data-blob]', root)) {
-    const url = await db.getBlobUrl(img.dataset.blob);
-    if (url) img.src = url;
+    const id = img.dataset.blob;
+    let url = blobUrls.get(id);
+    if (!url) {
+      url = await db.getBlobUrl(id);
+      if (!url) continue;
+      blobUrls.set(id, url);
+      if (blobUrls.size > 40) {                 // держим только недавние
+        const oldest = blobUrls.keys().next().value;
+        URL.revokeObjectURL(blobUrls.get(oldest));
+        blobUrls.delete(oldest);
+      }
+    }
+    img.src = url;
   }
 }
 
@@ -112,11 +127,32 @@ function back() {
 
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
+function plural(n, a, b, c) {
+  const x = Math.abs(n) % 100, y = x % 10;
+  if (x > 10 && x < 20) return c;
+  if (y > 1 && y < 5) return b;
+  if (y === 1) return a;
+  return c;
+}
+
 /* ── действия ────────────────────────────────────────────────── */
 
-document.addEventListener('click', async (e) => {
+/* Человеческий текст вместо технической ошибки браузера */
+function humanError(e) {
+  const m = String(e?.name === 'QuotaExceededError' ? 'quota' : (e?.message || e));
+  if (/quota|QuotaExceeded/i.test(m)) return 'На устройстве кончилось место. Сохрани копию файлом и удали лишние документы.';
+  if (/NetworkError|Failed to fetch|нет связи/i.test(m)) return 'Нет связи — попробуй ещё раз.';
+  return m.length > 140 ? 'Что-то пошло не так. Попробуй ещё раз.' : m;
+}
+
+document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-act]');
   if (!el) return;
+  // без ловушки любая ошибка внутри уходила в пустоту: экран не менялся, тоста не было
+  handleAction(el).catch(err => { console.error(err); toast(humanError(err)); });
+});
+
+async function handleAction(el) {
   const act = el.dataset.act;
   const view = $('#view');
   TG.haptic(['wipe', 'del-doc', 'del-meal', 'reparse'].includes(act) ? 'warning' : 'light');
@@ -173,7 +209,10 @@ document.addEventListener('click', async (e) => {
     }
     case 'pick-date': pickDate(el.dataset.id); break;
     case 'mine': {
-      if (await S.confirmPatient(el.dataset.id)) { toast('Учёл в твоих линиях'); render(); }
+      const r = await S.confirmPatient(el.dataset.id);
+      if (r.ok && r.requeued) { toast('Ставлю в очередь на разбор'); render(); runQueue(); }
+      else if (r.ok) { toast('Учёл в твоих линиях'); render(); }
+      else { toast(r.reason); render(); }
       break;
     }
     case 'undup': {
@@ -295,8 +334,12 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'wipe': {
-      if (await confirmSheet('Удалить всё без следа?', 'Документы, числа, еда и настройки исчезнут с этого устройства. Восстановить будет нельзя.', 'Удалить всё', true)) {
-        await db.wipeAll(); location.reload();
+      if (await confirmSheet('Удалить всё без следа?',
+        'Документы, числа, еда и настройки исчезнут с этого устройства И из копии в облаке Телеграма. Восстановить будет нельзя.', 'Удалить всё', true)) {
+        // иначе на следующем запуске приложение предлагало «вернуть архив из облака»
+        try { await BK.forgetCloud(); } catch {}
+        await db.wipeAll();
+        location.reload();
       }
       break;
     }
@@ -336,7 +379,7 @@ document.addEventListener('click', async (e) => {
     case 'ob-skip': app.obStep = 3; render(); break;
     case 'ob-done': db.saveSettings({ onboarded: true }); go('summary'); break;
   }
-});
+}
 
 /* ── файлы ───────────────────────────────────────────────────── */
 
@@ -370,7 +413,7 @@ async function intake(files) {
   const added = await S.addFiles(files, {
     onProgress: (p) => { if (p.stage === 'pdf' && p.page) toast(`${p.file}: страница ${p.page} из ${p.total}`, 1200); },
   });
-  toast(`Взял ${added.length} ${added.length === 1 ? 'файл' : 'файлов'}`);
+  toast(`Взял ${added.length} ${plural(added.length, 'файл', 'файла', 'файлов')}`);
   go('inbox');
   runQueue();
 }
@@ -380,15 +423,27 @@ async function runQueue() {
   if (queueRunning) return;
   const s = db.settings();
   if (!s.apiKey || !s.modelVision) {
-    toast('Сначала ключ и модель в настройках');
+    toast('Файлы сохранил. Чтобы их прочитать, нужен ключ — вот здесь', 3600);
     go('settings');
     return;
   }
   queueRunning = true;
-  await S.processQueue(() => { if (['inbox', 'summary'].includes(app.route)) render(); });
-  queueRunning = false;
+  let errs = 0;
+  try {
+    /* Пока очередь шла, человек мог докинуть ещё файлов или нажать
+       «Переразобрать» — раньше они просто повисали до следующего запуска. */
+    for (let pass = 0; pass < 20; pass++) {
+      await S.processQueue(() => { if (['inbox', 'summary'].includes(app.route)) render(); });
+      errs += S.state.queue.errors.length;
+      if (!S.state.docs.some(d => d.status === 'queued')) break;
+    }
+  } catch (e) {
+    toast(humanError(e));
+  } finally {
+    // без finally один сбой в отрисовке навсегда запирал очередь
+    queueRunning = false;
+  }
   if (db.settings().autoCloud) BK.scheduleCloudSave();
-  const errs = S.state.queue.errors.length;
   toast(errs ? `Готово, но ${errs} не прочитал` : 'Разобрал всё');
   await refreshSummary(true);
   render();
@@ -468,7 +523,7 @@ async function explainMarker(key) {
       model: db.settings().modelChat || db.settings().modelVision,
       temperature: 0.3, maxTokens: 400,
       messages: [
-        { role: 'system', content: 'Ты комментируешь один показатель из архива анализов человека. Два предложения, с числами и датами, без диагнозов. По-русски, на «ты».' },
+        { role: 'system', content: 'Ты комментируешь один показатель из архива анализов человека. ' + VOICE_RULES },
         { role: 'user', content: `Показатель: ${title}\nЗамеры:\n${body}\n\nЧто видно в этой линии?` },
       ],
     });
@@ -516,7 +571,7 @@ async function doctorQuestions() {
       model: db.settings().modelChat || db.settings().modelVision,
       temperature: 0.3, maxTokens: 500,
       messages: [
-        { role: 'system', content: 'Ты помогаешь человеку подготовиться к приёму врача по его архиву анализов. Не ставь диагнозов и не предлагай лечение — только вопросы, которые стоит задать врачу. По-русски, на «ты».' },
+        { role: 'system', content: 'Ты помогаешь человеку подготовиться к приёму врача по его архиву анализов. Только вопросы, которые стоит задать врачу. ' + VOICE_RULES },
         { role: 'user', content: S.buildContext() + '\n\nСформулируй три коротких вопроса врачу — каждый с числом и датой из данных выше. Пронумеруй.' },
       ],
     });
@@ -660,5 +715,13 @@ async function importAll() {
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
+    /* Новая версия приходит целиком: как только новый обработчик взял управление,
+       перезагружаемся один раз, чтобы не работать половиной старой сборки. */
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloaded) return;
+      reloaded = true;
+      location.reload();
+    });
   }
 })();
