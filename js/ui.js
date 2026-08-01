@@ -101,12 +101,14 @@ export function sparkline(series, { w = 76, h = 26, color } = {}) {
   const vals = pts.map(p => p.value);
   const min = Math.min(...vals), max = Math.max(...vals);
   const span = (max - min) || 1;
-  const x = i => 3 + i * ((w - 6) / (pts.length - 1));
-  const y = v => h - 4 - ((v - min) / span) * (h - 8);
-  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
+  const xs = pts.map((_, i) => 4 + i * ((w - 8) / (pts.length - 1)));
+  const ys = vals.map(v => h - 5 - ((v - min) / span) * (h - 10));
+  // та же плавная интерполяция, что и на большом графике — линии выглядят родными
+  const m = tangents(xs, ys);
+  const d = pts.slice(1).map((_, i) => segment(xs, ys, m, i)).join(' ');
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">
-    <path d="${d}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="${x(pts.length - 1).toFixed(1)}" cy="${y(last.value).toFixed(1)}" r="3.4" fill="${dotFill}"/>
+    <path d="${d}" fill="none" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="${xs[xs.length - 1].toFixed(1)}" cy="${ys[ys.length - 1].toFixed(1)}" r="3.2" fill="${dotFill}"/>
   </svg>`;
 }
 
