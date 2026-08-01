@@ -117,17 +117,26 @@ const defaults = {
   weightKg: 79,
   onboarded: false,
   units: {},          // ключ показателя → предпочтительная единица
-  theme: 'auto',
+  theme: 'light',   // светлая по умолчанию; тёмную включают руками
   lastModelsFetch: 0,
   autoCloud: true,          // копия «скелета» в облако Телеграма
   lastCloudBackup: null,
   cloudBytes: 0,
   tgUserId: null,
+  themeMigrated: 0,
 };
 
 export function settings() {
-  try { return { ...defaults, ...JSON.parse(localStorage.getItem(SKEY) || '{}') }; }
-  catch { return { ...defaults }; }
+  try {
+    const saved = JSON.parse(localStorage.getItem(SKEY) || '{}');
+    // разовый переезд: раньше темой правил Телеграм, теперь по умолчанию светлая
+    if (saved.theme === 'auto' && !saved.themeMigrated) {
+      saved.theme = 'light';
+      saved.themeMigrated = 1;
+      localStorage.setItem(SKEY, JSON.stringify(saved));
+    }
+    return { ...defaults, ...saved };
+  } catch { return { ...defaults }; }
 }
 export function saveSettings(patch) {
   const s = { ...settings(), ...patch };

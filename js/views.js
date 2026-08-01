@@ -677,10 +677,16 @@ export function settingsView(app) {
   const s = db.settings();
   const models = app.models || db.cachedModels() || [];
   const vision = models.filter(m => (m.inputs || []).includes('image'));
-  const q = (app.modelQuery || '').toLowerCase();
-  const filtered = (app.modelTab === 'chat' ? models : vision)
-    .filter(m => !q || m.id.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q))
-    .slice(0, 40);
+  const q = (app.modelQuery || '').toLowerCase().trim();
+  const pool = app.modelTab === 'chat' ? models : vision;
+  const freeOnly = !!app.modelFree;
+  const shownLimit = app.modelLimit || 25;
+  const matched = pool
+    .filter(m => !freeOnly || m.free)
+    .filter(m => !q || m.id.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q)
+      || (/беспл|free/.test(q) && m.free));
+  const filtered = matched.slice(0, shownLimit);
+  const freeCount = pool.filter(m => m.free).length;
 
   let html = backHead('Настройки', 'ключ, модель, данные');
 
@@ -715,8 +721,26 @@ export function settingsView(app) {
       <button class="seg ${app.modelTab !== 'chat' ? 'on' : ''}" data-act="model-tab" data-tab="vision">Для снимков</button>
       <button class="seg ${app.modelTab === 'chat' ? 'on' : ''}" data-act="model-tab" data-tab="chat">Для текстов</button>
     </div>
-    <div class="card" style="padding:12px 16px"><input type="text" id="modelQuery" placeholder="поиск: gemini, claude, gpt…" value="${esc(app.modelQuery || '')}"></div>
-    <div class="card list">`;
+    <div class="card" style="padding:12px 16px">
+      <input type="text" id="modelQuery" placeholder="поиск: gemini, gemma, claude…" value="${esc(app.modelQuery || '')}">
+      <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:8px">
+        <button class="chip ${!freeOnly ? 'on' : ''}" data-act="model-free" data-v="0">Все · ${pool.length}</button>
+        <button class="chip ${freeOnly ? 'on' : ''}" data-act="model-free" data-v="1">Бесплатные · ${freeCount}</button>
+      </div>
+    </div>`;
+
+    if (freeOnly) {
+      html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
+        <div class="grow sm" style="line-height:1.5">У бесплатных моделей свои ограничения: <b>примерно 50 запросов в сутки</b> и очередь в час пик. Бланки они читают заметно хуже платных — <b>обязательно сверь распознанные числа с оригиналом</b>. Для пробы годятся, для архива лучше платная.</div></div></div>`;
+    }
+
+    if (!filtered.length) {
+      html += `<div class="card"><div class="sm" style="line-height:1.5">${freeOnly
+        ? 'Среди тех, что умеют читать картинки, бесплатных сейчас нет. Сними фильтр или загляни во вкладку «Для текстов» — там бесплатных больше.'
+        : 'Ничего не нашлось. Попробуй другое слово или обнови список.'}</div></div>`;
+    }
+
+    html += `<div class="card list">`;
     html += filtered.map(m => {
       const chosen = (app.modelTab === 'chat' ? s.modelChat : s.modelVision) === m.id;
       const price = m.variablePrice || m.promptPrice == null ? 'цена зависит от выбранной модели'
@@ -724,13 +748,16 @@ export function settingsView(app) {
         : `$${(m.promptPrice * 1e6).toFixed(2)}/млн вход · $${(m.completionPrice * 1e6).toFixed(2)}/млн выход`;
       return `<div class="it" data-act="pick-model" data-id="${esc(m.id)}">
         ${chosen ? icon('check', 'ico s') : `<span class="dot unknown"></span>`}
-        <div class="grow"><div class="nm" style="font-size:14px">${esc(m.name)}</div>
+        <div class="grow"><div class="nm" style="font-size:14px">${esc(m.name)}${m.free ? ' <span style="color:var(--gold-ink);font-weight:800">· бесплатно</span>' : ''}</div>
           <div class="sm">${esc(m.id)}</div>
           <div class="sm">${esc(price)}${m.ctx ? ` · ${Math.round(m.ctx / 1000)}k контекст` : ''}</div></div>
         ${(m.inputs || []).includes('image') ? icon('eye', 'ico s') : ''}
       </div>`;
     }).join('');
     html += `</div>`;
+    if (matched.length > filtered.length) {
+      html += `<button class="btn ghost sm" data-act="model-more" style="margin-bottom:12px">Показать ещё ${Math.min(25, matched.length - filtered.length)} из ${matched.length}</button>`;
+    }
   }
 
   const unread = S.state.docs.filter(d => d.status === 'ready').length;

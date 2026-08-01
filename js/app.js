@@ -18,6 +18,8 @@ const app = {
   docFilter: 'all',
   modelTab: 'vision',
   modelQuery: '',
+  modelFree: false,
+  modelLimit: 25,
   models: null,
   modelsLoading: false,
   keyState: '',
@@ -71,7 +73,11 @@ function render() {
   }
   const mq = $('#modelQuery');
   if (mq) {
-    mq.oninput = debounce(() => { app.modelQuery = mq.value; const p = view.scrollTop; render(); $('#view').scrollTop = p; $('#modelQuery')?.focus(); }, 220);
+    mq.oninput = debounce(() => {
+      app.modelQuery = mq.value; app.modelLimit = 25;
+      const p = view.scrollTop; render(); $('#view').scrollTop = p;
+      const f = $('#modelQuery'); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
+    }, 220);
   }
 }
 
@@ -209,7 +215,9 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'refresh-models': await loadModels(); break;
-    case 'model-tab': app.modelTab = el.dataset.tab; render(); break;
+    case 'model-tab': app.modelTab = el.dataset.tab; app.modelLimit = 25; render(); break;
+    case 'model-free': app.modelFree = el.dataset.v === '1'; app.modelLimit = 25; render(); break;
+    case 'model-more': app.modelLimit = (app.modelLimit || 25) + 25; render(); break;
     case 'pick-model': {
       const id = el.dataset.id;
       if (app.modelTab === 'chat') { db.saveSettings({ modelChat: id }); TG.cloudSet('modelChat', id); }
@@ -512,6 +520,7 @@ async function loadModels() {
       const av = a.inputs.includes('image') ? 0 : 1, bv = b.inputs.includes('image') ? 0 : 1;
       if (av !== bv) return av - bv;
       if (rank(a) !== rank(b)) return rank(a) - rank(b);
+      if (a.free !== b.free) return a.free ? -1 : 1;     // бесплатные впереди равных
       const ap = a.promptPrice == null ? Infinity : a.promptPrice;
       const bp = b.promptPrice == null ? Infinity : b.promptPrice;
       return ap - bp;

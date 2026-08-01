@@ -27,6 +27,25 @@ export function initTelegram({ onBack, onThemeChange } = {}) {
   };
   applyHeight();
   tg.onEvent?.('viewportChanged', applyHeight);
+
+  /* Сверху в мини-приложении висят собственные кнопки Телеграма — «назад», «⋯», «закрыть».
+     Клиент говорит, сколько места они занимают: safeAreaInset — вырез экрана,
+     contentSafeAreaInset — как раз полоса с кнопками. Складываем и отдаём в CSS. */
+  const applyInsets = () => {
+    const sa = tg.safeAreaInset || {};          // вырез самого экрана
+    const ca = tg.contentSafeAreaInset || {};   // полоса с кнопками «назад / ⋯ / закрыть»
+    const full = !!tg.isFullscreen;
+    // в обычном режиме Телеграм уже опустил окно ниже выреза — иначе отступ удвоится
+    const top = full ? (Number(sa.top) || 0) + (Number(ca.top) || 0) : (Number(ca.top) || 0);
+    const bottom = full ? (Number(sa.bottom) || 0) + (Number(ca.bottom) || 0) : (Number(ca.bottom) || 0);
+    const root = document.documentElement;
+    root.style.setProperty('--tg-top', Math.max(0, top) + 'px');
+    root.style.setProperty('--tg-bottom', Math.max(0, bottom) + 'px');
+  };
+  applyInsets();
+  tg.onEvent?.('safeAreaChanged', applyInsets);
+  tg.onEvent?.('contentSafeAreaChanged', applyInsets);
+  tg.onEvent?.('fullscreenChanged', applyInsets);
   tg.onEvent?.('themeChanged', () => onThemeChange?.(tg.colorScheme));
 
   if (onBack) {
