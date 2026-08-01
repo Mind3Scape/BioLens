@@ -1,11 +1,17 @@
 /* Обвязка Telegram Mini App.
    Приложение обязано работать и без Телеграма — здесь всё «если есть, то используем». */
 
-const tg = window.Telegram?.WebApp || null;
+const api = () => window.Telegram?.WebApp || null;
 
-export const inTelegram = !!(tg && tg.initData !== undefined && tg.platform && tg.platform !== 'unknown');
+/* Проверка именно функцией: скрипт Телеграма может подгрузиться позже нас,
+   и «замороженная» константа навсегда решила бы, что мы в обычном браузере. */
+export function inTelegram() {
+  const t = api();
+  return !!(t && t.initData !== undefined && t.platform && t.platform !== 'unknown');
+}
 
 export function initTelegram({ onBack, onThemeChange } = {}) {
+  const tg = api();
   if (!tg) return { inTelegram: false };
 
   try { tg.ready(); } catch {}
@@ -32,11 +38,13 @@ export function initTelegram({ onBack, onThemeChange } = {}) {
 }
 
 export function setBackButton(visible) {
+  const tg = api();
   if (!tg?.BackButton) return;
   try { visible ? tg.BackButton.show() : tg.BackButton.hide(); } catch {}
 }
 
 export function haptic(kind = 'light') {
+  const tg = api();
   if (!tg?.HapticFeedback) return;
   try {
     if (kind === 'success' || kind === 'error' || kind === 'warning') tg.HapticFeedback.notificationOccurred(kind);
@@ -45,11 +53,11 @@ export function haptic(kind = 'light') {
 }
 
 export function tgTheme() {
-  return tg?.colorScheme || null;
+  return api()?.colorScheme || null;
 }
 
 export function tgUserName() {
-  const u = tg?.initDataUnsafe?.user;
+  const u = api()?.initDataUnsafe?.user;
   return u ? (u.first_name || u.username || null) : null;
 }
 
@@ -57,6 +65,7 @@ export function tgUserName() {
    и переезжают на другое устройство. Сами анализы туда НЕ уходят — они тяжёлые и приватные. */
 export function cloudGet(key) {
   return new Promise((res) => {
+    const tg = api();
     if (!tg?.CloudStorage) return res(null);
     try { tg.CloudStorage.getItem(key, (err, val) => res(err ? null : (val || null))); }
     catch { res(null); }
@@ -64,10 +73,48 @@ export function cloudGet(key) {
 }
 export function cloudSet(key, value) {
   return new Promise((res) => {
+    const tg = api();
     if (!tg?.CloudStorage) return res(false);
     try { tg.CloudStorage.setItem(key, String(value), (err) => res(!err)); }
     catch { res(false); }
   });
+}
+
+export function cloudGetMany(keys) {
+  return new Promise((res) => {
+    const tg = api();
+    if (!tg?.CloudStorage) return res({});
+    try { tg.CloudStorage.getItems(keys, (err, vals) => res(err ? {} : (vals || {}))); }
+    catch { res({}); }
+  });
+}
+export function cloudKeys() {
+  return new Promise((res) => {
+    const tg = api();
+    if (!tg?.CloudStorage) return res([]);
+    try { tg.CloudStorage.getKeys((err, keys) => res(err ? [] : (keys || []))); }
+    catch { res([]); }
+  });
+}
+export function cloudRemove(keys) {
+  return new Promise((res) => {
+    const tg = api();
+    if (!tg?.CloudStorage) return res(false);
+    try { tg.CloudStorage.removeItems(keys, (err) => res(!err)); }
+    catch { res(false); }
+  });
+}
+
+export function tgUser() {
+  return api()?.initDataUnsafe?.user || null;
+}
+
+/* Скачивание файла: в Телеграме обычная ссылка-download часто не срабатывает */
+export function downloadViaTelegram(url, fileName) {
+  const tg = api();
+  if (!tg?.downloadFile) return false;
+  try { tg.downloadFile({ url, file_name: fileName }); return true; }
+  catch { return false; }
 }
 
 /* Камера. В Телеграме getUserMedia доступен не везде, поэтому есть запасной путь —

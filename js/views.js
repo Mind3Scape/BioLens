@@ -6,7 +6,7 @@ import * as db from './db.js';
 import { icon } from './icons.js';
 import { esc, sparkline, chart, statusDot, aiBlock, emptyBlock, ring, bar } from './ui.js';
 import { markerTitle } from './markers.js';
-import { tgUserName } from './telegram.js';
+import { tgUserName, tgUser, inTelegram } from './telegram.js';
 
 const head = (title, sub, right = '') => `
   <div class="head">
@@ -335,9 +335,16 @@ export function docView(app) {
   let html = backHead(doc.title || 'Документ',
     [doc.date ? S.ruDate(doc.date) : 'дата не разобрана', doc.lab, ms.length ? `${ms.length} показателей` : null].filter(Boolean).join(' · '));
 
-  html += `<div class="card" style="padding:12px"><img class="shot-big" data-blob="${esc(doc.blobId)}" alt="оригинал"/>
-    <div class="row" style="margin-top:10px"><div class="grow sm">${esc(doc.fileName || '')} · оригинал хранится всегда</div>
-    <button class="mini warn" data-act="del-doc" data-id="${esc(doc.id)}">Удалить</button></div></div>`;
+  if (doc.blobId) {
+    html += `<div class="card" style="padding:12px"><img class="shot-big" data-blob="${esc(doc.blobId)}" alt="оригинал"/>
+      <div class="row" style="margin-top:10px"><div class="grow sm">${esc(doc.fileName || '')} · оригинал хранится всегда</div>
+      <button class="mini warn" data-act="del-doc" data-id="${esc(doc.id)}">Удалить</button></div></div>`;
+  } else {
+    html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
+      <div class="grow"><div class="nm" style="font-size:14px">Оригинал остался на прежнем устройстве</div>
+        <div class="sm">Числа восстановлены из облака Телеграма, снимок — нет. Можно закинуть его заново</div></div>
+      <button class="mini" data-act="add">Добавить</button></div></div>`;
+  }
 
   if (doc.status === 'needs-date') {
     html += `<div class="card gold">
@@ -764,18 +771,62 @@ export function settingsView(app) {
     </div>
   </div>`;
 
-  html += `<div class="cap">Данные</div>
+  const u = tgUser();
+  const backupAt = s.lastCloudBackup;
+  html += `<div class="cap">Вход и память</div>
   <div class="card">
-    <div class="row"><div class="grow"><div class="nm" style="font-size:14px">Всё лежит на этом устройстве</div>
-      <div class="sm">${S.state.docs.length} документов · ${S.state.meas.length} замеров · ${S.state.meals.length} блюд</div></div></div>
-    <div class="divide"></div>
-    <div class="sm" style="line-height:1.6">
-      Оригиналы и числа хранятся в браузере и никуда не синхронизируются.<br>
-      <b>Важно и честно:</b> когда я разбираю снимок или отвечаю на вопрос, картинка и выжимка данных уходят в OpenRouter выбранной тобой модели — иначе разбор невозможен. Всё остальное время они не покидают устройство.
+    <div class="row" style="gap:12px">
+      <div class="rnd dark" style="width:42px;height:42px">${icon('user', 'ico s')}</div>
+      <div class="grow"><div class="nm">${u ? esc([u.first_name, u.last_name].filter(Boolean).join(' ')) : 'Без входа'}</div>
+        <div class="sm">${u ? `Телеграм · id ${u.id}` : 'открыто в браузере, не в Телеграме'}</div></div>
     </div>
     <div class="divide"></div>
-    <div class="row"><button class="mini" data-act="export">Выгрузить всё</button>
-      <button class="mini warn" data-act="wipe">Удалить всё без следа</button></div>
+    <div class="sm" style="line-height:1.6">
+      Отдельного пароля нет и не нужно: внутри Телеграма ты уже вошёл — приложение видит твой аккаунт и держит копию архива в <b>твоём</b> облаке Телеграма.
+    </div>
+  </div>`;
+
+  html += `<div class="card">
+    <div class="row"><div class="grow"><div class="nm" style="font-size:14px">На этом устройстве</div>
+      <div class="sm">${S.state.docs.length} документов · ${S.state.meas.length} замеров · ${S.state.meals.length} блюд</div></div>
+      ${icon('check', 'ico s')}</div>
+    <div class="divide"></div>
+    <div class="row"><div class="grow"><div class="nm" style="font-size:14px">Копия в облаке Телеграма</div>
+      <div class="sm">${inTelegram()
+        ? (backupAt ? `последняя — ${new Date(backupAt).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })} · ${Math.round((s.cloudBytes || 0) / 1024)} КБ` : 'ещё не делалась')
+        : 'доступна только внутри Телеграма'}</div></div>
+      <button class="tog ${s.autoCloud ? 'on' : ''}" data-act="toggle-cloud"></button></div>
+    <div class="divide"></div>
+    <div class="sm" style="line-height:1.6">
+      В облако уходят <b>числа, даты, лаборатории и еда</b> — этого хватает, чтобы восстановить все линии на новом телефоне.
+      <b>Снимки туда не помещаются</b> (лимит около 4 МБ), они остаются на устройстве. Хочешь сохранить и оригиналы — сделай копию файлом.
+    </div>
+    <div class="divide"></div>
+    <div class="row" style="flex-wrap:wrap;gap:8px">
+      <button class="mini" data-act="cloud-save">Сохранить копию сейчас</button>
+      <button class="mini" data-act="cloud-restore">Восстановить из облака</button>
+    </div>
+  </div>`;
+
+  html += `<div class="card">
+    <div class="row"><div class="grow"><div class="nm" style="font-size:14px">Копия файлом — со снимками</div>
+      <div class="sm">Полный архив одним файлом: числа и оригиналы бланков</div></div></div>
+    <div class="divide"></div>
+    <div class="row" style="flex-wrap:wrap;gap:8px">
+      <button class="mini" data-act="export">Сохранить файл</button>
+      <button class="mini" data-act="import">Восстановить из файла</button>
+    </div>
+  </div>`;
+
+  html += `<div class="card">
+    <div class="sm" style="line-height:1.6">
+      <b>Что уходит наружу:</b> когда я разбираю снимок или отвечаю на вопрос, картинка и выжимка данных уходят в OpenRouter выбранной тобой модели — иначе разбора не будет. В остальное время данные не покидают устройство и твоё облако Телеграма.
+    </div>
+    <div class="divide"></div>
+    <div class="row" style="flex-wrap:wrap;gap:8px">
+      <button class="mini warn" data-act="cloud-forget">Стереть копию в облаке</button>
+      <button class="mini warn" data-act="wipe">Удалить всё без следа</button>
+    </div>
   </div>`;
 
   html += `<div class="disc">BioLens · локальное приложение. Ключи и данные — твои.</div>`;

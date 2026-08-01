@@ -8,6 +8,7 @@ import { fetchModels, checkKey, summarize, askArchive, mealFeedback, chat } from
 import { scan } from './scan.js';
 import { fillDemo, clearDemo, hasDemo } from './demo.js';
 import * as TG from './telegram.js';
+import * as BK from './backup.js';
 
 const app = {
   route: 'summary',
@@ -170,6 +171,7 @@ document.addEventListener('click', async (e) => {
       const input = $(`input[data-fix="${el.dataset.id}"]`);
       const v = input ? parseFloat(String(input.value).replace(',', '.')) : NaN;
       if (isFinite(v)) await S.fixMeasurement(el.dataset.id, v); else await S.confirmMeasurement(el.dataset.id);
+      if (db.settings().autoCloud) BK.scheduleCloudSave();
       toast('Принято'); render();
       break;
     }
@@ -234,6 +236,41 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'export': await exportAll(); break;
+    case 'import': await importAll(); break;
+    case 'toggle-cloud': {
+      const on = !db.settings().autoCloud;
+      db.saveSettings({ autoCloud: on });
+      if (on) BK.scheduleCloudSave();
+      toast(on ? 'Копия в облаке включена' : 'Копия в облаке выключена');
+      render();
+      break;
+    }
+    case 'cloud-save': {
+      toast('Сохраняю копию…');
+      const r = await BK.saveToCloud();
+      toast(r.ok ? `Копия сохранена · ${Math.round(r.bytes / 1024)} КБ` : r.reason);
+      render();
+      break;
+    }
+    case 'cloud-restore': {
+      const info = await BK.cloudInfo();
+      if (!info) { toast('В облаке пока пусто'); break; }
+      const when = new Date(info.at).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+      if (await confirmSheet('Восстановить из облака?',
+        `Копия от ${when}: ${info.docs} документов, ${info.meas} замеров. Числа вернутся, снимки — нет: они остались на прежнем устройстве. Уже имеющееся не тронется.`, 'Восстановить')) {
+        toast('Восстанавливаю…');
+        const r = await BK.restoreFromCloud();
+        toast(r.ok ? `Вернул ${r.meas} замеров` : r.reason);
+        app.aiSummary = ''; render(); refreshSummary(true);
+      }
+      break;
+    }
+    case 'cloud-forget': {
+      if (await confirmSheet('Стереть копию в облаке?', 'Данные на этом устройстве останутся, но на новом телефоне восстанавливать будет нечего.', 'Стереть', true)) {
+        await BK.forgetCloud(); toast('Копия стёрта'); render();
+      }
+      break;
+    }
     case 'wipe': {
       if (await confirmSheet('Удалить всё без следа?', 'Документы, числа, еда и настройки исчезнут с этого устройства. Восстановить будет нельзя.', 'Удалить всё', true)) {
         await db.wipeAll(); location.reload();
@@ -321,6 +358,7 @@ async function runQueue() {
   queueRunning = true;
   await S.processQueue(() => { if (['inbox', 'summary'].includes(app.route)) render(); });
   queueRunning = false;
+  if (db.settings().autoCloud) BK.scheduleCloudSave();
   const errs = S.state.queue.errors.length;
   toast(errs ? `Готово, но ${errs} не прочитал` : 'Разобрал всё');
   await refreshSummary(true);
@@ -355,7 +393,11 @@ async function addMealFlow(useCamera) {
   render();
   if (meal.status === 'error') toast(meal.error);
   else if (meal.status === 'skipped') toast('Это не похоже на еду');
-  else { toast(`${meal.title}: ${Math.round(meal.nutrition.kcal)} ккал`); foodFeedback(); }
+  else {
+    toast(`${meal.title}: ${Math.round(meal.nutrition.kcal)} ккал`);
+    if (db.settings().autoCloud) BK.scheduleCloudSave();
+    foodFeedback();
+  }
 }
 
 async function foodFeedback() {
@@ -497,28 +539,48 @@ function pickDate(docId) {
 }
 
 async function exportAll() {
-  const data = await db.exportAll();
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `biolens-${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
-  toast('Файл выгружен');
+  toast('Собираю копию со снимками…');
+  const { blob, name, size } = await BK.exportFile({ withImages: true });
+  const url = URL.createObjectURL(blob);
+  if (!TG.downloadViaTelegram(url, name)) {
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.click();
+  }
+  toast(`Копия готова · ${(size / 1048576).toFixed(1)} МБ`);
+}
+
+async function importAll() {
+  const file = await new Promise(res => {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'application/json,.json';
+    inp.onchange = () => res(inp.files?.[0] || null);
+    inp.click();
+  });
+  if (!file) return;
+  toast('Читаю копию…');
+  const r = await BK.importFile(file);
+  if (!r.ok) { toast(r.reason); return; }
+  toast(`Вернул ${r.meas} замеров${r.withImages ? ' со снимками' : ''}`);
+  app.aiSummary = ''; render(); refreshSummary(true);
 }
 
 /* ── старт ───────────────────────────────────────────────────── */
 
 (async function start() {
-  TG.initTelegram({
-    onBack: () => back(),
-    onThemeChange: () => render(),
-  });
+  // скрипт Телеграма изредка приезжает позже нас — пробуем несколько раз
+  const bootTelegram = () => TG.initTelegram({ onBack: () => back(), onThemeChange: () => render() });
+  bootTelegram();
+  if (!TG.inTelegram()) {
+    for (const delay of [300, 900]) {
+      setTimeout(() => { if (TG.inTelegram()) { bootTelegram(); render(); } }, delay);
+    }
+  }
 
   await db.open();
   await S.loadAll();
 
   // ключ и модель могли остаться в облаке Телеграма с прошлого устройства
-  if (TG.inTelegram) {
+  if (TG.inTelegram()) {
     const s0 = db.settings();
     const [ck, cv, cc] = await Promise.all([TG.cloudGet('apiKey'), TG.cloudGet('modelVision'), TG.cloudGet('modelChat')]);
     const patch = {};
@@ -531,6 +593,19 @@ async function exportAll() {
   app.hasDemo = hasDemo();
   render();
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme(db.settings().theme));
+
+  // новое устройство: локально пусто, а в облаке лежит копия
+  if (TG.inTelegram() && !S.state.docs.length) {
+    const info = await BK.cloudInfo();
+    if (info?.meas) {
+      const when = new Date(info.at).toLocaleString('ru-RU', { day: 'numeric', month: 'long' });
+      if (await confirmSheet('Нашёл твой архив в облаке',
+        `Копия от ${when}: ${info.docs} документов и ${info.meas} замеров. Вернуть их на это устройство? Снимки останутся на прежнем — вернутся только числа.`, 'Вернуть')) {
+        const r = await BK.restoreFromCloud();
+        if (r.ok) { db.saveSettings({ onboarded: true }); toast(`Вернул ${r.meas} замеров`); }
+      }
+    }
+  }
 
   // если что-то осталось в очереди с прошлого раза — доразберём
   if (S.state.docs.some(d => ['queued', 'reading'].includes(d.status))) {

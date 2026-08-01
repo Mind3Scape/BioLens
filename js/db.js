@@ -119,6 +119,10 @@ const defaults = {
   units: {},          // ключ показателя → предпочтительная единица
   theme: 'auto',
   lastModelsFetch: 0,
+  autoCloud: true,          // копия «скелета» в облако Телеграма
+  lastCloudBackup: null,
+  cloudBytes: 0,
+  tgUserId: null,
 };
 
 export function settings() {
