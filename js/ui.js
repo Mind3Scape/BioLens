@@ -145,7 +145,10 @@ export function chart(series, { w = 340, h = 210, unit = '' } = {}) {
   const pts = series.filter(p => isFinite(p.value) && p.date);
   if (!pts.length) return '';
 
-  const padL = 10, padR = 16, padT = 22, padB = 34;
+  /* Слева оставлено поле под числа границ: раньше они лежали пилюлями поверх
+     заливки и то и дело садились на саму линию замеров. Вынесены за поле —
+     читаются всегда, а график остался чистым. */
+  const padL = 32, padR = 14, padT = 22, padB = 34;
   const innerW = w - padL - padR, innerH = h - padT - padB;
 
   const times = pts.map(p => +new Date(p.date));
@@ -164,8 +167,10 @@ export function chart(series, { w = 340, h = 210, unit = '' } = {}) {
   const X = t => padL + ((t - tMin) / tSpan) * innerW;
   const Y = v => padT + innerH - ((v - vMin) / ((vMax - vMin) || 1)) * innerH;
 
-  /* Коридор нормы: заливка по сегментам (границы у лабораторий разные)
-     плюс тонкие линии по краям — так видно, где именно проходит граница. */
+  /* Коридор нормы — тихий фон: серая заливка и пунктирные границы.
+     Цветом на этом графике горят только сами замеры; если коридор красить
+     зелёным, он забирает всё внимание и «в норме» кричит громче, чем точка,
+     вышедшая за границу. */
   let band = '', edges = '';
   const seg = (i) => {
     const p = pts[i];
@@ -173,34 +178,38 @@ export function chart(series, { w = 340, h = 210, unit = '' } = {}) {
     const x1 = i === pts.length - 1 ? w - padR : X(times[i + 1]);
     return { p, x0, x1 };
   };
-  for (let i = 0; i < pts.length; i++) {
-    const { p, x0, x1 } = pts.length === 1
-      ? { p: pts[0], x0: padL, x1: w - padR }
-      : seg(i);
+  /* Когда границы во всех бланках одинаковые — а так почти всегда, — коридор
+     рисуется ОДНИМ прямоугольником. Ступеньками из соседних плиток он давал
+     тонкие светлые швы на стыках: полупрозрачные заливки накладывались на долю
+     пикселя, и по серому фону шли вертикальные полосы. */
+  const sameRefs = pts.every(p => p.refLow === pts[0].refLow && p.refHigh === pts[0].refHigh);
+  const chunks = (pts.length === 1 || sameRefs)
+    ? [{ p: pts[0], x0: padL, x1: w - padR }]
+    : pts.map((_, i) => seg(i));
+  for (const { p, x0, x1 } of chunks) {
     if (p.refLow == null && p.refHigh == null) continue;
     const top = Y(p.refHigh ?? vMax), bot = Y(p.refLow ?? vMin);
     const width = Math.max(0, x1 - x0);
-    band += `<rect x="${x0.toFixed(1)}" y="${top.toFixed(1)}" width="${width.toFixed(1)}" height="${Math.max(0, bot - top).toFixed(1)}" fill="var(--ok-soft)"/>`;
-    if (p.refHigh != null) edges += `<line x1="${x0.toFixed(1)}" y1="${top.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${top.toFixed(1)}" stroke="var(--ok-dot)" stroke-opacity=".5" stroke-width="1"/>`;
-    if (p.refLow != null) edges += `<line x1="${x0.toFixed(1)}" y1="${bot.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${bot.toFixed(1)}" stroke="var(--ok-dot)" stroke-opacity=".5" stroke-width="1"/>`;
-    if (pts.length === 1) break;
+    band += `<rect x="${x0.toFixed(1)}" y="${top.toFixed(1)}" width="${width.toFixed(1)}" height="${Math.max(0, bot - top).toFixed(1)}" fill="var(--band)"/>`;
+    if (p.refHigh != null) edges += `<line x1="${x0.toFixed(1)}" y1="${top.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${top.toFixed(1)}" stroke="var(--band-line)" stroke-width="1" stroke-dasharray="4 4"/>`;
+    if (p.refLow != null) edges += `<line x1="${x0.toFixed(1)}" y1="${bot.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${bot.toFixed(1)}" stroke="var(--band-line)" stroke-width="1" stroke-dasharray="4 4"/>`;
   }
 
-  /* Числа границ — прямо на коридоре, с подложкой, чтобы читались поверх заливки */
+  /* Числа границ — прямо на своих линиях, справа, где линия замеров их не задевает.
+     Человек должен видеть, откуда докуда идёт норма, не уходя глазами с графика. */
   const last = pts[pts.length - 1];
   const tagOnEdge = (value, y, text) => {
     if (value == null) return '';
-    const cy = Math.max(padT + 7, Math.min(padT + innerH - 3, y));
-    const wBox = 11 + String(text).length * 5.6;
-    return `<rect x="${padL + 1}" y="${(cy - 8).toFixed(1)}" width="${wBox.toFixed(1)}" height="14" rx="7" fill="var(--surface)" opacity=".92"/>
-      <text x="${padL + 6}" y="${(cy + 2.5).toFixed(1)}" font-size="9.5" font-weight="700" fill="var(--ok)">${text}</text>`;
+    const cy = Math.max(padT + 4, Math.min(padT + innerH, y));
+    return `<text x="${(padL - 7).toFixed(1)}" y="${(cy + 3.5).toFixed(1)}" font-size="10" font-weight="650" fill="var(--ink3)" text-anchor="end">${text}</text>`;
   };
   let refTags = '';
   if (last.refHigh != null) refTags += tagOnEdge(last.refHigh, Y(last.refHigh), trim(last.refHigh));
   if (last.refLow != null) refTags += tagOnEdge(last.refLow, Y(last.refLow), trim(last.refLow));
+  // одно слово вместо строки-заголовка: что это за серая полоса, ясно и так
   const bandLabel = (last.refLow != null || last.refHigh != null)
-    ? `<text x="${w - padR}" y="${(padT - 8).toFixed(1)}" font-size="9.5" fill="var(--ok)" text-anchor="end" font-weight="700">коридор нормы${unit ? ', ' + esc(unit) : ''}</text>`
-    : `<text x="${w - padR}" y="${(padT - 8).toFixed(1)}" font-size="9.5" fill="var(--ink4)" text-anchor="end">границы нормы неизвестны</text>`;
+    ? `<text x="${padL + 2}" y="${(padT - 7).toFixed(1)}" font-size="9.5" fill="var(--ink4)">норма${unit ? ', ' + esc(unit) : ''}</text>`
+    : `<text x="${padL + 2}" y="${(padT - 7).toFixed(1)}" font-size="9.5" fill="var(--ink4)">границы нормы неизвестны</text>`;
 
   /* Линия. Разрыв больше двух лет рисуем пунктиром: там ничего не измерялось,
      и сплошная линия соврала бы про плавный переход. */
@@ -221,12 +230,15 @@ export function chart(series, { w = 340, h = 210, unit = '' } = {}) {
   const gapMark = biggest ? (() => {
     const years = Math.round(biggest.days / 365);
     const txt = `нет данных ${years} ${years === 1 ? 'год' : years < 5 ? 'года' : 'лет'}`;
-    const cx = Math.min(w - 48, Math.max(48, biggest.x));
-    const cy = Math.max(padT + 12, biggest.y - 12);
+    // держим подпись левее последнего значения: оно тоже стоит вверху справа
+    const cx = Math.min(w - 78, Math.max(padL + 40, biggest.x));
+    /* Подпись живёт у верхнего края поля, а не над самим разрывом: привязанная
+       к линии, она то и дело садилась на границу коридора, и нечитаемыми
+       становились обе. Сверху она не пересекается ни с чем и всегда на месте. */
+    const cy = padT + 7;
     const bw = txt.length * 5 + 12;
-    // подложка: иначе подпись садится прямо на границу коридора и обе становятся нечитаемы
-    return `<rect x="${(cx - bw / 2).toFixed(1)}" y="${(cy - 9).toFixed(1)}" width="${bw.toFixed(1)}" height="14" rx="7" fill="var(--surface)" opacity=".92"/>
-      <text x="${cx.toFixed(1)}" y="${(cy + 1.5).toFixed(1)}" font-size="9.5" fill="var(--ink3)" text-anchor="middle">${txt}</text>`;
+    return `<rect x="${(cx - bw / 2).toFixed(1)}" y="${(cy - 8).toFixed(1)}" width="${bw.toFixed(1)}" height="14" rx="7" fill="var(--field)"/>
+      <text x="${cx.toFixed(1)}" y="${(cy + 2).toFixed(1)}" font-size="9.5" fill="var(--ink3)" text-anchor="middle">${txt}</text>`;
   })() : '';
 
   /* Точки: белый ободок отделяет их от заливки коридора, у последней — значение */
@@ -251,7 +263,7 @@ export function chart(series, { w = 340, h = 210, unit = '' } = {}) {
   const stamp = (iso) => shortSpan ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : iso.slice(0, 4);
   const labels = [...new Set(labelIdx)].map(i => {
     const p = pts[i];
-    const cx = Math.min(w - 16, Math.max(16, xs[i]));
+    const cx = Math.min(w - 14, Math.max(padL, xs[i]));
     const isLast = i === pts.length - 1;
     return `<text x="${cx.toFixed(1)}" y="${(padT + innerH + 18).toFixed(1)}" font-size="10" fill="${isLast ? 'var(--ink2)' : 'var(--ink3)'}" font-weight="${isLast ? 700 : 500}" text-anchor="middle">${stamp(p.date)}</text>`;
   }).join('');
@@ -273,8 +285,8 @@ export function ring(pct, { size = 44, stroke = 5, color = 'var(--ink)' } = {}) 
 }
 
 /* Полоса-коридор: где значение стоит относительно границ нормы.
-   Зелёный отрезок — норма, серые хвосты — за её пределами, метка — твоё значение
-   в цвете состояния. Числа границ подписаны прямо под их местами на шкале. */
+   Серый отрезок — норма, метка в цвете состояния — твоё значение. Числа границ
+   подписаны прямо под их местами на шкале: видно, откуда докуда идёт норма. */
 export function rangeBar(value, low, high, unit = '', status) {
   const v = Number(value);
   if (!isFinite(v) || (low == null && high == null)) return '';
@@ -295,17 +307,17 @@ export function rangeBar(value, low, high, unit = '', status) {
 
   /* Засечка с числом на самой границе коридора: человек должен видеть,
      откуда докуда идёт норма, не переводя взгляд в другое место экрана. */
-  const edge = (x, side) => `
-    <div style="position:absolute;left:${pos(x)}%;top:6px;width:2px;height:16px;border-radius:2px;background:var(--ok-dot);opacity:.75;transform:translateX(-1px)"></div>
-    <div style="position:absolute;left:${pos(x)}%;top:25px;transform:translateX(${side === 'l' ? '-50%' : '-50%'});
-      font-size:10.5px;font-weight:750;color:var(--ok);white-space:nowrap">${trim(x)}</div>`;
+  const edge = (x) => `
+    <div style="position:absolute;left:${pos(x)}%;top:5px;width:1.5px;height:18px;border-radius:2px;background:var(--band-line);transform:translateX(-0.75px)"></div>
+    <div style="position:absolute;left:${pos(x)}%;top:26px;transform:translateX(-50%);
+      font-size:10.5px;font-weight:650;color:var(--ink3);white-space:nowrap">${trim(x)}</div>`;
 
   return `<div style="margin-top:18px;margin-bottom:2px">
     <div style="position:relative;height:42px">
       <div style="position:absolute;left:0;right:0;top:9px;height:10px;border-radius:99px;background:var(--hair)"></div>
-      <div style="position:absolute;left:${bandL}%;width:${Math.max(2, bandR - bandL)}%;top:9px;height:10px;border-radius:99px;background:var(--ok-soft)"></div>
-      ${lo != null ? edge(lo, 'l') : ''}
-      ${hi != null ? edge(hi, 'r') : ''}
+      <div style="position:absolute;left:${bandL}%;width:${Math.max(2, bandR - bandL)}%;top:9px;height:10px;border-radius:99px;background:var(--band)"></div>
+      ${lo != null ? edge(lo) : ''}
+      ${hi != null ? edge(hi) : ''}
       <div style="position:absolute;left:${at}%;top:2px;width:5px;height:24px;border-radius:99px;background:${color};
         box-shadow:0 0 0 3px var(--surface);transform:translateX(-2.5px)"></div>
     </div>
@@ -337,7 +349,7 @@ export function gradeScale(value, grades) {
       return `<div style="display:flex;align-items:center;gap:9px;padding:9px 12px;font-size:12.5px;
         ${on ? `background:${soft};font-weight:750;color:${c}` : 'color:var(--ink3)'}
         ${i ? ';border-top:1px solid var(--hair)' : ''}">
-        <span style="width:4px;height:16px;border-radius:2px;background:${dot};opacity:${on ? 1 : 0.28};flex:0 0 auto"></span>
+        <span style="width:4px;height:16px;border-radius:2px;background:${on ? dot : 'var(--hair2)'};flex:0 0 auto"></span>
         <span style="flex:1;min-width:0">${esc(g.label)}</span>
         <span style="font-variant-numeric:tabular-nums;${on ? '' : 'color:var(--ink4)'}">${range}</span>
       </div>`;

@@ -808,7 +808,9 @@ export function dayFoodText(date) {
 
 export function fmtRef(m) {
   if (!m) return '—';
-  if (m.refLow != null && m.refHigh != null) return `${trim(m.refLow)}–${trim(m.refHigh)}`;
+  /* «норма 0–41» — лишнее слово: нулевой нижней границы у показателя не бывает,
+     это просто «сколько угодно мало». Читается как «до 41» и на один знак короче. */
+  if (m.refLow != null && m.refHigh != null) return Number(m.refLow) === 0 ? `до ${trim(m.refHigh)}` : `${trim(m.refLow)}–${trim(m.refHigh)}`;
   if (m.refHigh != null) return `до ${trim(m.refHigh)}`;
   if (m.refLow != null) return `от ${trim(m.refLow)}`;
   return 'не указана';
@@ -828,6 +830,13 @@ export function ruDate(iso) {
   const [y, m, d] = iso.split('-').map(Number);
   if (m === 1 && d === 1) return String(y);
   return `${d} ${MONTHS[m - 1]} ${y}`;
+}
+/* Дата без года — для списков, где год уже стоит заголовком раздела.
+   Повторять его в каждой строке значит тратить полстроки на то, что и так видно. */
+export function ruDayMonth(iso) {
+  if (!iso) return 'без даты';
+  const [, m, d] = iso.split('-').map(Number);
+  return `${d} ${MONTHS[m - 1]}`;
 }
 export function ruShort(iso) {
   if (!iso) return '—';

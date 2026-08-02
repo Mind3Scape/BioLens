@@ -17,6 +17,10 @@
   --ok:#0F7343;   --ok-dot:#15984F;  --ok-soft:rgba(23,168,96,0.18);
   --edge:#A34900; --edge-dot:#D2650A;--edge-soft:rgba(210,101,10,0.16);
   --bad:#C0271A;  --bad-dot:#D02A1B; --bad-soft:rgba(220,50,35,0.13);
+  /* Коридор нормы — фон, а не сообщение. Залитый зелёным он кричал «всё хорошо»
+     через весь график, в том числе там, где линия шла выше него, и перебивал
+     единственное, что там должно гореть цветом, — сами замеры. */
+  --band:rgba(21,22,27,0.05); --band-line:rgba(21,22,27,0.16);
 
   --shadow:0 6px 20px rgba(21,22,27,0.06);
   --safe-b:env(safe-area-inset-bottom,0px);
@@ -29,6 +33,7 @@ html[data-theme="dark"]{
   --ok:#3DD183;   --ok-dot:#3DD183;  --ok-soft:rgba(61,209,131,0.16);
   --edge:#FF9F45; --edge-dot:#FF9F45;--edge-soft:rgba(255,159,69,0.16);
   --bad:#FF7062;  --bad-dot:#FF7062; --bad-soft:rgba(255,112,98,0.15);
+  --band:rgba(255,255,255,0.06); --band-line:rgba(255,255,255,0.18);
 
   --shadow:0 6px 20px rgba(0,0,0,0.35);
 }
@@ -212,6 +217,15 @@ html[data-theme="dark"] .dock{background:rgba(30,31,37,0.82);box-shadow:0 10px 3
 .bubble.me{margin-left:auto;background:var(--ink);color:var(--surface);border-bottom-right-radius:7px}
 .bubble.ai{background:var(--surface);border-bottom-left-radius:7px;box-shadow:var(--shadow)}
 .composer{position:sticky;bottom:0;display:flex;gap:8px;align-items:flex-end;padding-top:8px;background:linear-gradient(transparent,var(--canvas) 30%)}
+
+/* ── оговорки одним списком ──
+   Раньше каждая оговорка была отдельной карточкой с иконкой: шесть серых
+   абзацев подряд читались как стена и прятали друг друга. Теперь это один
+   блок коротких строк — видно, сколько их всего, и каждая в одну мысль. */
+.nline{display:flex;gap:9px;font-size:13px;line-height:1.5;color:var(--ink2)}
+.nline+.nline{margin-top:11px;padding-top:11px;border-top:1px solid var(--hair)}
+.nline:before{content:"";width:5px;height:5px;min-width:5px;border-radius:99px;background:var(--ink4);margin-top:7px}
+.nline b{color:var(--ink)}
 
 /* ── прочее ── */
 .disc{font-size:12px;line-height:1.5;color:var(--ink3);text-align:center;padding:14px 12px 0}

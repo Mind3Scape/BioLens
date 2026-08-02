@@ -23,6 +23,11 @@ const backHead = (title, sub) => `
 
 const backIcon = () => `<svg class="ico s" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="14.5,5 7.5,12 14.5,19"/></svg>`;
 
+/* Один знак «это открывается» на всё приложение. Раньше в правом углу карточек
+   стояли разные декоративные иконки — лист, плюс, — и по ним нельзя было
+   отличить кнопку от украшения. */
+const chevron = () => `<svg class="ico s" viewBox="0 0 24 24" fill="none" stroke="var(--ink4)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><polyline points="9.5,5 16.5,12 9.5,19"/></svg>`;
+
 const avatarBtn = `<button class="rnd" data-act="settings">${icon('user', 'ico s')}</button>`;
 const addBtn = `<button class="rnd dark" data-act="add">${icon('plus', 'ico s')}</button>`;
 
@@ -73,13 +78,19 @@ export function summary(app) {
   if (attention.length) {
     const shown = attention.slice(0, 4);
     html += `<div class="cap">Требует внимания · ${attention.length}</div><div class="card list">`;
+    /* Та же строка, что на экране «Показатели»: точка, имя, пояснение, линия,
+       число с единицей. Раньше один и тот же показатель выглядел на двух
+       экранах по-разному — и приходилось каждый раз заново соображать, где что.
+       И одно состояние — один громкий сигнал: слово «выше нормы» объясняет,
+       а не кричит, поэтому стоит спокойным серым рядом с границами. */
     html += shown.map(m => `<div class="it" data-act="marker" data-key="${esc(m.key)}">
       ${statusDot(m.status)}
       <div class="grow"><div class="nm">${esc(m.title)}</div>
-        <div class="sm">норма ${esc(S.fmtRef(m.last))} ${esc(m.unit)}</div></div>
-      <div style="text-align:right;white-space:nowrap">
-        <div class="val" style="color:${inkTone(m.status)}">${S.trim(m.last.value)}<span class="unit">${esc(m.unit)}</span></div>
-        <div class="delta ${m.status === 'out' ? 'worse' : ''}" style="font-weight:650">${statusWord(m.status, m.last.value, m.last.refLow, m.last.refHigh)}</div>
+        <div class="sm">${statusWord(m.status, m.last.value, m.last.refLow, m.last.refHigh)} · норма ${esc(S.fmtRef(m.last))}</div></div>
+      ${sparkline(m.series, { w: 58, h: 24 })}
+      <div style="text-align:right;min-width:52px">
+        <div class="val" style="color:${inkTone(m.status)}">${S.trim(m.last.value)}</div>
+        <div class="unit" style="display:block;margin:1px 0 0">${esc(m.unit)}</div>
       </div>
     </div>`).join('');
     if (attention.length > shown.length) {
@@ -100,20 +111,23 @@ export function summary(app) {
         ${statusDot(m.status)}
         <div class="grow"><div class="nm">${esc(m.title)}</div>
           <div class="sm">было ${S.trim(m.base?.value ?? '—')} · норма ${esc(S.fmtRef(m.last))}</div></div>
-        ${sparkline(m.series)}
-        <div style="text-align:right"><div class="val" style="color:${inkTone(m.status)}">${S.trim(m.last.value)}<span class="unit">${esc(m.unit)}</span></div>
-          <div class="delta ${tone}">${dir}${Math.round(m.change * 100)}%</div></div>
+        ${sparkline(m.series, { w: 58, h: 24 })}
+        <div style="text-align:right;min-width:52px">
+          <div class="val" style="color:${inkTone(m.status)}">${S.trim(m.last.value)}</div>
+          <div class="delta ${tone}" style="display:block;margin-top:1px">${dir}${Math.round(m.change * 100)}%</div></div>
       </div>`;
     }).join('');
     html += `</div>`;
   }
 
+  /* Карточка открывается целиком: кнопка рядом с текстом отжимала его в три
+     строки на узком экране, а вести она всё равно могла только в одно место. */
   const due = S.dueList().slice(0, 2);
   for (const d of due) {
-    html += `<div class="card flat"><div class="row">${icon('clock', 'ico s')}
+    html += `<div class="card flat tap" data-act="due"><div class="row">${icon('clock', 'ico s')}
       <div class="grow"><div class="nm" style="font-size:14px">${esc(d.title)} — ${d.daysOld > 700 ? Math.floor(d.daysOld / 365) + ' года не мерил' : 'пора пересдать'}</div>
-        <div class="sm">Последний раз — ${S.ruDate(d.last.date)}</div></div>
-      <button class="mini" data-act="due">Что ещё</button></div></div>`;
+        <div class="sm">последний раз ${S.ruShort(d.last.date)}</div></div>
+      ${chevron()}</div></div>`;
   }
 
   if (needsAttention) {
@@ -130,7 +144,7 @@ export function summary(app) {
       <div class="row">${icon('forkknife', 'ico s')}
         <div class="grow"><div class="nm">Цель по питанию: ${esc(goal.goal)}</div>
           <div class="sm">${t.count ? `сегодня ${t.count} приёма · ${t.kcal} ккал` : 'сегодня ещё ничего не записано'}</div></div>
-        ${icon('plus', 'ico s')}
+        ${chevron()}
       </div></div>`;
   }
 
@@ -138,7 +152,7 @@ export function summary(app) {
     <div class="row">${icon('stethoscope', 'ico s')}
       <div class="grow"><div class="nm">Страница для врача</div>
         <div class="sm">Вся картина за годы на один экран — вместо пакета бумаг</div></div>
-      ${icon('file', 'ico s')}
+      ${chevron()}
     </div></div>`;
 
   html += `<div class="disc">Приложение показывает факты и динамику, не ставит диагнозов и не назначает лечение.</div>`;
@@ -164,9 +178,11 @@ export function markers(app) {
   const unknown = shown.filter(m => !m.stale && m.status === 'unknown');
   const stale = shown.filter(m => m.stale);
 
-  const last = S.state.docs.filter(d => d.status === 'ready' && d.date).sort((a, b) => b.date.localeCompare(a.date))[0];
+  /* «Последний забор» — дата последнего бланка С ЧИСЛАМИ. Раньше сюда попадало
+     любое свежее УЗИ, и подпись обещала анализ, которого не было. */
+  const lastDate = list.map(m => m.last.date).filter(Boolean).sort().slice(-1)[0];
 
-  let html = head('Показатели', `${list.length} ${plural(list.length, 'показатель', 'показателя', 'показателей')}${last ? ` · последний забор ${S.ruShort(last.date)}` : ''}`, avatarBtn + addBtn);
+  let html = head('Показатели', `${list.length} ${plural(list.length, 'показатель', 'показателя', 'показателей')}${lastDate ? ` · последний ${S.ruShort(lastDate)}` : ''}`, avatarBtn + addBtn);
   html += `<div class="segs scroll">${Object.entries(groups).map(([k, t]) =>
     `<button class="seg ${filter === k ? 'on' : ''}" data-act="filter" data-group="${k}">${esc(t)}</button>`).join('')}</div>`;
 
@@ -180,6 +196,9 @@ export function markers(app) {
 
 const GROUP_TITLES = { blood: 'Кровь', liver: 'Печень', lipids: 'Липиды', iron: 'Железо', hormones: 'Гормоны', vitamins: 'Витамины', kidney: 'Почки', sugar: 'Сахар', other: 'Прочее' };
 
+/* Строка списка. Раньше справа под числом висела разница вроде «+3.4» — без
+   единицы и без ответа на вопрос «с какого момента». Направление и так видно
+   по линии слева, поэтому справа осталось одно: сколько сейчас и в чём. */
 function row(m) {
   const ref = (m.last.refLow != null || m.last.refHigh != null) ? `норма ${S.fmtRef(m.last)}` : 'норма не указана';
   const sub = m.stale
@@ -189,10 +208,10 @@ function row(m) {
   return `<div class="it" data-act="marker" data-key="${esc(m.key)}">
     ${statusDot(st)}
     <div class="grow"><div class="nm">${esc(m.title)}</div><div class="sm">${esc(sub)}</div></div>
-    ${m.stale ? '' : sparkline(m.series, { w: 62, h: 24 })}
-    <div style="text-align:right;min-width:54px">
+    ${m.stale ? '' : sparkline(m.series, { w: 58, h: 24 })}
+    <div style="text-align:right;min-width:52px">
       <div class="val ${m.last.confidence < 0.75 ? 'doubt' : ''}" style="color:${inkTone(st)}">${S.trim(m.last.value)}</div>
-      ${m.delta != null && !m.stale ? `<div class="delta ${m.deltaTone}">${m.delta > 0 ? '+' : ''}${S.trim(m.delta)}</div>` : ''}
+      <div class="unit" style="display:block;margin:1px 0 0">${esc(m.unit)}</div>
     </div>
   </div>`;
 }
@@ -232,7 +251,12 @@ export function markerDetail(app) {
   const gapDays = base && base !== last ? Math.round((Date.parse(last.date) - Date.parse(base.date)) / 86400000) : 0;
   const sameLab = !base || (base.lab || '') === (last.lab || '');
   const period = gapDays >= 300 ? 'за год' : gapDays >= 45 ? `за ${Math.round(gapDays / 30)} мес.` : 'с прошлого раза';
-  const tone = showDiff ? S.changeTone(key, base.value, last.value, last.refLow, last.refHigh) : 'flat';
+  const twoLabsCloseInTime = showDiff && gapDays < 45 && !sameLab;
+  /* Раньше разница показывалась крупно и в цвете, а отдельной карточкой ниже
+     приложение само же её опровергало: «считать изменением рано». Теперь оговорка
+     стоит прямо в строке разницы — одно место, одна мысль, без спора с собой. */
+  const noise = showDiff && (twoLabsCloseInTime || sig?.significant === false);
+  const tone = showDiff && !noise ? S.changeTone(key, base.value, last.value, last.refLow, last.refHigh) : 'flat';
   html += `<div class="card">
     <div class="hero">
       <div class="big" style="color:${inkTone(st)}">${S.trim(last.value)}</div>
@@ -240,6 +264,7 @@ export function markerDetail(app) {
       <div class="grow" style="text-align:right">
         ${statusTag(st, last.value, last.refLow, last.refHigh)}
         <div class="sm" style="margin-top:5px">${S.ruDate(last.date)}${showDiff ? ` · <span class="delta ${tone}">${diff > 0 ? '+' : ''}${S.trim(diff)} ${period}</span>` : ''}</div>
+        ${noise ? `<div class="sm" style="margin-top:2px;font-size:11.5px">${twoLabsCloseInTime ? 'но лаборатории разные' : 'это в пределах разброса'}</div>` : ''}
       </div>
     </div>
     ${rangeBar(last.value, last.refLow, last.refHigh, unit, st)}
@@ -250,6 +275,17 @@ export function markerDetail(app) {
             : `так написано в бланке${last.lab ? ' ' + esc(last.lab) : ''}`}`
         : 'Границы нормы в бланке не указаны — сказать «много» или «мало» не по чему'}</div>
   </div>`;
+
+  /* График сразу за числом: сначала «сколько сейчас», потом «как шло». Всё
+     остальное — объяснения, оговорки, список замеров — идёт после. */
+  if (series.length === 1) {
+    html += `<div class="card" style="padding:20px 16px 16px;text-align:center">
+      ${chart(series, { unit })}
+      <div class="sm" style="margin-top:6px;line-height:1.5">Пока это <b>точка, а не линия</b>. Одно число не говорит, растёт оно или падает.</div>
+    </div>`;
+  } else {
+    html += `<div class="card">${chart(series, { unit })}</div>`;
+  }
 
   /* Объяснение простым языком: сначала «что это», остальное — по нажатию,
      чтобы экран не превращался в справочник. */
@@ -291,66 +327,40 @@ export function markerDetail(app) {
     </div>`;
   }
 
-  /* Три разных вывода, и выбор между ними — половина смысла приложения:
-     разница внутри точности метода, разница между лабораториями и настоящий сдвиг. */
-  if (showDiff && gapDays < 45 && !sameLab) {
-    html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
-      <div class="grow sm" style="line-height:1.5">Эти два замера сделаны с разницей ${gapDays === 0 ? 'в один день' : `в ${gapDays} ${plural(gapDays, 'день', 'дня', 'дней')}`} и <b>в разных лабораториях</b>. За такой срок показатель не меняется — почти вся разница здесь принадлежит методу, а не тебе. Это не динамика.</div></div></div>`;
-  } else if (showDiff && sig?.significant === false) {
-    html += `<div class="card flat"><div class="row">${icon('eye', 'ico s')}
-      <div class="grow sm" style="line-height:1.5">Разница <b>${Math.abs(Math.round(sig.percent))}%</b> — это меньше, чем естественный разброс этого показателя (около ${Math.round(sig.rcv)}%). Считать это изменением рано: так колеблется даже стабильный результат.</div></div></div>`;
-  } else if (showDiff && sig?.significant === true) {
-    html += `<div class="card flat"><div class="row">${icon('chartline', 'ico s')}
-      <div class="grow sm" style="line-height:1.5">Изменение на <b>${Math.abs(Math.round(sig.percent))}%</b> выходит за естественный разброс показателя (около ${Math.round(sig.rcv)}%) — это похоже на настоящий сдвиг.</div></div></div>`;
-  }
-
-  const mk = MARKERS[key];
-  if (mk?.note) {
-    html += `<div class="card flat"><div class="row">${icon('eye', 'ico s')}
-      <div class="grow sm" style="line-height:1.5">${esc(mk.note)}</div></div></div>`;
-  }
-  if (last.separated) {
-    html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
-      <div class="grow sm">В бланке рядом стоял похожий по названию показатель — я держу их <b>раздельно</b>, чтобы не склеить разное в одну линию</div></div></div>`;
-  }
-  if (series.some(m => m.sameDay)) {
-    html += `<div class="card flat"><div class="row">${icon('recycle', 'ico s')}
-      <div class="grow sm">В один день есть несколько измерений — это не динамика, а повторные замеры. Разницу между ними за изменение не считаю</div></div></div>`;
-  }
-  /* Разные лаборатории меряют разными методами и калибруют приборы по-своему.
-     Часть «динамики» между бланками — это разница лабораторий, а не тела. */
+  /* Оговорки — одним списком коротких строк. Каждая из них по отдельности
+     важна: без них разброс метода и разница лабораторий читаются как динамика.
+     Но шестью серыми абзацами подряд они превращались в стену, которую человек
+     пролистывает целиком. Одна карточка, одна мысль на строку. */
+  const notes = [];
   const labs = S.labsIn(series);
-  const alreadySaidAboutLabs = showDiff && gapDays < 45 && !sameLab;
-  if (labs.length > 1 && !alreadySaidAboutLabs) {
-    html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
-      <div class="grow sm" style="line-height:1.5">Замеры из разных лабораторий (${esc(labs.join(', '))}). Методы и калибровка у них не совпадают — часть разницы между бланками принадлежит лаборатории, а не тебе. Надёжнее всего сравнивать анализы одной лаборатории.</div></div></div>`;
-  }
 
-  if (series.length === 1) {
-    html += `<div class="card" style="padding:22px 16px;text-align:center">
-      ${chart(series, { unit })}
-      <div class="sm" style="margin-top:8px;line-height:1.5">Пока это <b>точка, а не линия</b>. Одно число не говорит, растёт оно или падает.</div>
-    </div>`;
-  } else {
-    html += `<div class="card">${chart(series, { unit })}</div>`;
+  if (twoLabsCloseInTime) {
+    notes.push(`Последние два замера сделаны ${gapDays === 0 ? 'в один день' : `с разницей в ${gapDays} ${plural(gapDays, 'день', 'дня', 'дней')}`} и <b>в разных лабораториях</b> — за такой срок показатель не меняется, это разница метода, а не твоя.`);
+  } else if (showDiff && sig?.significant === false) {
+    notes.push(`Разница <b>${Math.abs(Math.round(sig.percent))}%</b> меньше естественного разброса этого показателя (около ${Math.round(sig.rcv)}%) — так колеблется даже стабильный результат.`);
+  } else if (showDiff && sig?.significant === true) {
+    notes.push(`Изменение на <b>${Math.abs(Math.round(sig.percent))}%</b> выходит за естественный разброс (около ${Math.round(sig.rcv)}%) — похоже на настоящий сдвиг.`);
   }
+  if (labs.length > 1 && !twoLabsCloseInTime) {
+    notes.push(`Замеры из разных лабораторий (${esc(labs.join(', '))}) — методы и калибровка у них не совпадают. Надёжнее сравнивать анализы одной.`);
+  }
+  const mk = MARKERS[key];
+  if (mk?.note) notes.push(esc(mk.note));
+  if (last.separated) notes.push('В бланке рядом стоял похожий по названию показатель — держу их <b>раздельно</b>, чтобы не склеить разное в одну линию.');
+  if (series.some(m => m.sameDay)) notes.push('В один день есть несколько измерений — это повторные замеры, разницу между ними за изменение не считаю.');
 
-  // единицы: если что-то пересчитывалось — честно показать
   const converted = series.filter(p => p.converted);
   if (converted.length) {
     const ex = converted[converted.length - 1];
-    html += `<div class="card note">
-      <div class="row">${icon('warning', 'ico s')}<div class="grow"><div class="nm" style="font-size:14px">Разные единицы в бланках</div></div></div>
-      <div class="sm" style="margin-top:8px;line-height:1.55">Привёл к <b>${esc(unit)}</b>. Например, в бланке от ${S.ruDate(ex.date)} стояло <b>${S.trim(ex.rawValue)} ${esc(ex.rawUnit)}</b> — на графике это <b>${S.trim(ex.value)} ${esc(unit)}</b>.</div>
-    </div>`;
+    notes.push(`В бланках были разные единицы — привёл всё к <b>${esc(unit)}</b>. Например, ${S.ruDate(ex.date)}: было ${S.trim(ex.rawValue)} ${esc(ex.rawUnit)}, на графике ${S.trim(ex.value)} ${esc(unit)}.`);
   }
-
-  // разные названия
   const names = [...new Set(series.map(p => p.nameRaw).filter(Boolean))];
-  if (names.length > 1) {
+  if (names.length > 1) notes.push(`В разных бланках назывался по-разному: ${names.map(esc).join(', ')} — это один показатель.`);
+
+  if (notes.length) {
     html += `<div class="card">
-      <div class="cap" style="padding:0 0 8px">В бланках это называлось так</div>
-      <div class="chips">${names.map(n => `<span class="chip">${esc(n)}</span>`).join('')}</div>
+      <div class="cap" style="padding:0 0 10px">Что учесть · ${notes.length}</div>
+      ${notes.map(t => `<div class="nline"><span>${t}</span></div>`).join('')}
     </div>`;
   }
 
@@ -406,8 +416,9 @@ export function timeline(app) {
   const pending = shown.filter(d => ['queued', 'reading', 'needs-date', 'error', 'skipped', 'duplicate', 'foreign', 'needs-file'].includes(d.status));
   const done = shown.filter(d => d.status === 'ready');
 
+  // «разобрано 12 из 12» — новость только тогда, когда что-то ещё не разобрано
   const ready = all.filter(d => d.status === 'ready').length;
-  let html = head('Хроника', `${all.length} ${plural(all.length, 'файл', 'файла', 'файлов')} · разобрано ${ready}`, avatarBtn + addBtn);
+  let html = head('Хроника', `${all.length} ${plural(all.length, 'файл', 'файла', 'файлов')}${ready < all.length ? ` · разобрано ${ready}` : ''}`, avatarBtn + addBtn);
   html += `<div class="segs scroll">${Object.entries(kinds).map(([k, t]) =>
     `<button class="seg ${filter === k ? 'on' : ''}" data-act="dfilter" data-kind="${k}">${esc(t)}</button>`).join('')}</div>`;
 
@@ -481,14 +492,14 @@ const STATUS_BADGE = {
 
 function docRow(d, showBadge) {
   const ms = S.state.meas.filter(m => m.docId === d.id);
-  /* Зелёная точка означает «проверено и в норме». Если границ нет ни у одного
-     показателя, проверять было нечем — точка должна остаться серой. */
+  /* Раньше справа стояла цветная точка — и что она означает, знал только я.
+     Теперь там число: сколько показателей этого бланка вышли за границы.
+     Если всё в порядке, справа пусто: тишина — тоже ответ. */
   const known = ms.filter(m => m.refLow != null || m.refHigh != null);
-  const worst = !known.length ? 'unknown'
-    : known.some(m => (m.refLow != null && m.value < m.refLow) || (m.refHigh != null && m.value > m.refHigh)) ? 'out' : 'ok';
+  const outCount = known.filter(m => (m.refLow != null && m.value < m.refLow) || (m.refHigh != null && m.value > m.refHigh)).length;
   const badge = STATUS_BADGE[d.status];
   const parts = [
-    d.date ? S.ruDate(d.date) : (badge ? null : 'дата не разобрана'),
+    d.date ? S.ruDayMonth(d.date) : (badge ? null : 'дата не разобрана'),
     d.lab,
     ms.length ? `${ms.length} ${plural(ms.length, 'показатель', 'показателя', 'показателей')}` : null,
     d.isPdf ? `PDF · ${d.pageCount || (d.pages || []).length} ${plural(d.pageCount || 1, 'страница', 'страницы', 'страниц')}` : null,
@@ -503,7 +514,9 @@ function docRow(d, showBadge) {
       <div class="sm">${esc(sub)}</div></div>
     ${showBadge && badge
       ? (['queued', 'reading'].includes(d.status) ? `<div class="spin"></div>` : `<span class="mini">${esc(badge[0])}</span>`)
-      : statusDot(worst)}
+      : (outCount ? `<div style="text-align:right;min-width:44px">
+          <div class="val c-out" style="font-size:15px">${outCount}</div>
+          <div class="unit" style="display:block;margin:1px 0 0">вне нормы</div></div>` : '')}
   </div>`;
 }
 
@@ -751,21 +764,22 @@ export function food(app) {
       ? [['sugar_g', 'Сахар', 'г', tg.sugar_g, true], ['fiber_g', 'Клетчатка', 'г', tg.fiber_g, false], ['carbs_g', 'Углеводы', 'г', 250, true]]
       : [['protein_g', 'Белок', 'г', tg.protein_g, false], ['fiber_g', 'Клетчатка', 'г', tg.fiber_g, false], ['sat_fat_g', 'Насыщенные жиры', 'г', tg.sat_fat_g, true]];
 
+  /* Итог дня — одной строкой под числом, без третьей колонки справа: она
+     не помещалась и разрывала «2 приёма» пополам. */
   html += `<div class="card">
     <div class="row">
       ${ring(t.kcal / tg.kcal, { size: 52 })}
-      <div class="grow"><div class="nm" style="font-size:17px">${Math.round(t.kcal)} ккал</div>
-        <div class="sm">из ориентира ${tg.kcal} · ${t.count} ${plural(t.count, 'приём', 'приёма', 'приёмов')}</div></div>
-      <div style="text-align:right"><div class="sm">Б ${Math.round(t.protein_g)} · Ж ${Math.round(t.fat_g)} · У ${Math.round(t.carbs_g)}</div></div>
+      <div class="grow"><div class="nm" style="font-size:17px">${Math.round(t.kcal)} ккал <span class="unit">из ${tg.kcal}</span></div>
+        <div class="sm">Б ${Math.round(t.protein_g)} · Ж ${Math.round(t.fat_g)} · У ${Math.round(t.carbs_g)} · ${t.count} ${plural(t.count, 'приём', 'приёма', 'приёмов')}</div></div>
     </div>
     <div class="divide"></div>
     ${focus.map(([k, label, unit, target, lowerBetter]) => {
       const v = t[k] || 0;
-      const over = lowerBetter ? v > target : false;
-      const short = !lowerBetter && v < target;
+      // цветом отмечаем только перебор там, где меньше — лучше; остальное просто числа
+      const over = lowerBetter && v > target;
       return `<div style="margin-bottom:11px">
         <div class="row" style="margin-bottom:5px"><div class="grow sm" style="color:var(--ink)">${label}</div>
-          <div class="sm ${over ? '' : ''}" style="${over ? 'color:var(--bad);font-weight:700' : short ? '' : 'font-weight:700;color:var(--ink)'}">${S.trim(v)} / ${target} ${unit}</div></div>
+          <div class="sm" style="${over ? 'color:var(--bad);font-weight:700' : ''}">${S.trim(v)} / ${target} ${unit}</div></div>
         ${bar(v, target, { color: 'var(--ink)' })}
       </div>`;
     }).join('')}
@@ -780,7 +794,7 @@ export function food(app) {
       <div class="row">
         <div class="thumb" style="width:52px;aspect-ratio:1"><img data-blob="${esc(m.blobId)}" alt=""></div>
         <div class="grow"><div class="nm">${esc(m.title || 'Блюдо')}</div>
-          <div class="sm">${new Date(m.at).toTimeString().slice(0, 5)} · ${Math.round(m.nutrition?.kcal || 0)} ккал · нас. жиры ${S.trim(m.nutrition?.sat_fat_g || 0)} г · клетчатка ${S.trim(m.nutrition?.fiber_g || 0)} г</div></div>
+          <div class="sm">${new Date(m.at).toTimeString().slice(0, 5)} · ${Math.round(m.nutrition?.kcal || 0)} ккал · Б ${Math.round(m.nutrition?.protein_g || 0)} · Ж ${Math.round(m.nutrition?.fat_g || 0)} · У ${Math.round(m.nutrition?.carbs_g || 0)}</div></div>
         ${m.confidence != null && m.confidence < 0.6 ? `<span class="mini">на глаз</span>` : ''}
       </div>
     </div>`;
@@ -901,7 +915,7 @@ export function doctor(app) {
         const first = m.series[0];
         return `<div class="it" style="cursor:default">${statusDot(m.status)}
           <div class="grow"><div class="nm" style="font-size:14px">${esc(m.title)} ${S.trim(m.last.value)} ${esc(m.unit)}</div>
-            <div class="sm">норма ${esc(S.fmtRef(m.last))} · ${m.count > 1 ? `было ${S.trim(first.value)} ${S.ruShort(first.date)}` : 'единственный замер'} · ${S.ruShort(m.last.date)}${m.last.lab ? ' · ' + esc(m.last.lab) : ''}</div></div>
+            <div class="sm">норма ${esc(S.fmtRef(m.last))} · ${S.ruShort(m.last.date)}${m.last.lab ? ', ' + esc(m.last.lab) : ''}${m.count > 1 ? ` · было ${S.trim(first.value)} в ${S.ruShort(first.date)}` : ' · единственный замер'}</div></div>
         </div>`;
       }).join('')}
     </div></div>`;
