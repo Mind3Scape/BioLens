@@ -1,6 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="114" fill="#15161B"/>
-  <g transform="translate(128,128) scale(1)">
-    <path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM200,176a8,8,0,0,1,0,16H56a8,8,0,0,1-8-8V72a8,8,0,0,1,16,0v62.92l34.88-29.07a8,8,0,0,1,9.56-.51l43,28.69,43.41-36.18a8,8,0,0,1,10.24,12.3l-48,40a8,8,0,0,1-9.56.51l-43-28.69L64,155.75V176Z" fill="#FEDE34"/>
-  </g>
+  <!-- Знак BioLens: линза, сквозь которую видно живое.
+       Кольцо — сама линза, волна внутри — пульс. Ничего лишнего:
+       на 60 пикселях рабочего стола читается и то, и другое. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2C2F38"/>
+      <stop offset="1" stop-color="#0C0D11"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="30%" r="62%">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="114" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="114" fill="url(#glow)"/>
+  <circle cx="256" cy="256" r="134" fill="none" stroke="#FFFFFF" stroke-width="22"/>
+  <path d="M170 256h30l24-52 34 106 24-54h60" fill="none" stroke="#FFFFFF" stroke-width="22"
+        stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

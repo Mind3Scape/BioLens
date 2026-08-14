@@ -22,6 +22,16 @@
      единственное, что там должно гореть цветом, — сами замеры. */
   --band:rgba(21,22,27,0.05); --band-line:rgba(21,22,27,0.16);
 
+  /* Оттенки, которые НЕ означают здоровье. Светофор занят состоянием
+     показателя, поэтому дела — приём, изученность, еда — говорят другими
+     красками, и спутать их со «вне нормы» нельзя. */
+  --blue:#1C5FD0;   --blue-soft:rgba(28,95,208,0.10);
+  --violet:#6A3CD1; --violet-soft:rgba(106,60,209,0.10);
+  --teal:#0B6E64;   --teal-soft:rgba(11,110,100,0.10);
+  /* Краски систем организма: у каждой своя, ни одна не повторяет светофор */
+  --s-wine:#A83553; --s-indigo:#3A50C8; --s-amber:#8F6412; --s-moss:#4F7A2E;
+  --s-cyan:#0E7490; --s-violet:#6A3CD1; --s-teal:#0B6E64; --s-slate:#6A6D76;
+
   --shadow:0 6px 20px rgba(21,22,27,0.06);
   --safe-b:env(safe-area-inset-bottom,0px);
 
@@ -46,6 +56,12 @@ html[data-theme="dark"]{
   --edge:#FF9F45; --edge-dot:#FF9F45;--edge-soft:rgba(255,159,69,0.16);
   --bad:#FF7062;  --bad-dot:#FF7062; --bad-soft:rgba(255,112,98,0.15);
   --band:rgba(255,255,255,0.06); --band-line:rgba(255,255,255,0.18);
+
+  --blue:#79A9FF;   --blue-soft:rgba(121,169,255,0.14);
+  --violet:#B49BFF; --violet-soft:rgba(180,155,255,0.14);
+  --teal:#4FD6C2;   --teal-soft:rgba(79,214,194,0.14);
+  --s-wine:#F0809A; --s-indigo:#94A8FF; --s-amber:#E0B25A; --s-moss:#A8D67A;
+  --s-cyan:#59C6DE; --s-violet:#B49BFF; --s-teal:#4FD6C2; --s-slate:#9095A0;
 
   --shadow:0 6px 20px rgba(0,0,0,0.35);
   --glass:rgba(28,29,35,0.66);
@@ -90,7 +106,7 @@ b,strong{font-weight:680}
 /* ── шапка ── */
 .head{display:flex;align-items:center;gap:9px;padding:2px 2px 10px}
 .head .grow{flex:1;min-width:0}
-.rnd{width:38px;height:38px;min-width:38px;border-radius:99px;background:var(--surface);display:flex;align-items:center;
+.rnd{position:relative;width:38px;height:38px;min-width:38px;border-radius:99px;background:var(--surface);display:flex;align-items:center;
   justify-content:center;color:var(--ink);box-shadow:0 3px 10px rgba(21,22,27,0.08);cursor:pointer;border:none}
 .rnd.dark{background:var(--ink);color:var(--surface)}
 .rnd:active{transform:scale(0.94)}
@@ -214,22 +230,25 @@ label.lab{display:block;font-size:12px;font-weight:700;color:var(--ink3);margin:
    Так экран отдаёт содержимому те 30 пикселей, которые док занимал зря. */
 .tabs{position:absolute;left:0;right:0;bottom:0;padding:0 14px calc(9px + var(--safe-b));pointer-events:none;
   display:flex;justify-content:center}
-.dock{pointer-events:auto;width:100%;
+.dock{pointer-events:auto;width:auto;max-width:100%;
   background:var(--glass);backdrop-filter:blur(26px) saturate(180%);-webkit-backdrop-filter:blur(26px) saturate(180%);
-  border-radius:24px;
+  border-radius:26px;
   box-shadow:var(--glass-shadow), inset 0 0.5px 0 var(--glass-spec), inset 0 0 0 0.5px var(--glass-edge);
-  display:flex;align-items:center;justify-content:space-around;padding:7px 4px 6px;
-  transition:padding .28s cubic-bezier(.22,1,.36,1), width .28s cubic-bezier(.22,1,.36,1), border-radius .28s}
-.tab{display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--ink3);font-size:9.5px;font-weight:640;
-  background:none;border:none;cursor:pointer;font-family:inherit;flex:1;padding:3px 0;letter-spacing:-0.1px}
-.tab.on{color:var(--ink)}
-.tab span{max-height:14px;max-width:80px;opacity:1;overflow:hidden;white-space:nowrap;
-  transition:max-height .24s cubic-bezier(.22,1,.36,1), max-width .24s cubic-bezier(.22,1,.36,1), opacity .16s}
-/* Сжатый вид: подписи убираются и по высоте, и по ширине — иначе колонка
-   остаётся шириной слова «Показатели», и панель не худеет, а только садится. */
-.dock.mini{width:auto;padding:9px 8px;border-radius:22px}
-.dock.mini .tab{flex:0 0 auto;padding:1px 13px}
-.dock.mini .tab span{max-height:0;max-width:0;opacity:0}
+  display:flex;align-items:center;justify-content:center;gap:2px;padding:6px;
+  transition:padding .28s cubic-bezier(.22,1,.36,1)}
+.tab{display:flex;flex-direction:row;align-items:center;color:var(--ink3);font-size:12.5px;font-weight:680;
+  background:none;border:none;cursor:pointer;font-family:inherit;flex:0 0 auto;padding:10px 15px;border-radius:99px;
+  letter-spacing:-0.2px;transition:background .26s cubic-bezier(.22,1,.36,1), color .2s}
+/* Активная дверь — чернильная пилюля с подписью. Остальные молчат значками:
+   так панель остаётся узкой и не отнимает у экрана целую строку. */
+.tab.on{background:var(--ink);color:var(--surface)}
+.tab span{max-width:0;opacity:0;margin-left:0;white-space:nowrap;overflow:hidden;
+  transition:max-width .3s cubic-bezier(.22,1,.36,1), opacity .2s, margin-left .3s}
+.tab.on span{max-width:130px;opacity:1;margin-left:7px}
+.tab:active{transform:scale(0.96)}
+/* Листаешь вниз — подпись убирается совсем, остаются три значка */
+.dock.mini .tab{padding:10px 13px}
+.dock.mini .tab.on span{max-width:0;opacity:0;margin-left:0}
 .ico{width:21px;height:21px;display:block;fill:currentColor}
 /* Линейные знаки: тонкая галочка «открывается» и стрелка «назад».
    Через класс `ico` они получали заливку и превращались в чёрные треугольники. */
@@ -290,47 +309,6 @@ html[data-theme="dark"] .tile .ph{background:#F2F2F0}
 .tile .pg{position:absolute;left:3px;bottom:3px;padding:1px 5px;border-radius:99px;background:rgba(21,22,27,0.6);
   color:#fff;font-size:9px;font-weight:700}
 
-/* ── доля состояний и положение в норме ──
-   Полоса вместо трёх крупных чисел и короткая шкала вместо слов «выше нормы»:
-   насколько выше — видно, а не додумывается. */
-.hbar{display:flex;height:7px;border-radius:99px;overflow:hidden;background:var(--hair);margin-top:9px}
-.hbar i{display:block;height:100%}
-.hbar i+i{box-shadow:inset 1px 0 0 var(--surface)}
-.att{cursor:pointer;padding:1px 0}
-.att:active{opacity:.65}
-.mrange{position:relative;height:14px;margin:5px 0 2px}
-.mrange:before{content:"";position:absolute;left:0;right:0;top:5px;height:4px;border-radius:99px;background:var(--hair)}
-.mrange .band{position:absolute;top:5px;height:4px;border-radius:99px;background:var(--band-line);opacity:.55}
-.mrange .pin{position:absolute;top:1px;width:4px;height:12px;border-radius:99px;transform:translateX(-2px);
-  box-shadow:0 0 0 2.5px var(--surface)}
-
-/* ── лента дня ──
-   Четыре части суток стоят всегда, даже пустые: иначе непонятно, куда делись
-   день и ночь. Цифра — сколько ещё принять, галочка — всё принято,
-   прочерк — на это время ничего не назначено. */
-.ribbon{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
-.part{background:var(--field);border:none;border-radius:12px;padding:8px 4px 7px;cursor:pointer;font-family:inherit;
-  display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--ink3);position:relative}
-.part:active{transform:scale(0.96)}
-.part .pn{font-size:10.5px;font-weight:650;letter-spacing:-0.1px}
-.part .pv{font-size:15px;font-weight:800;letter-spacing:-0.4px;color:var(--ink);height:19px;display:flex;align-items:center}
-.part .pv .ico{width:15px;height:15px}
-.part.nil{opacity:.5}
-.part.nil .pv{color:var(--ink4);font-weight:600}
-/* Выбранная часть дня всегда в полную силу — даже пустая: приглушённая
-   заливка чернилами превращалась в мутно-серое пятно. */
-.part.nil.on{opacity:1}
-.part.done .pv{color:var(--ok)}
-/* Выбранная часть залита чернилами; текущая помечена точкой под названием.
-   ⚠️Текст на ней — var(--surface), а не белый: в тёмной теме чернила почти
-   белые, и белым по белому не читалось ничего. */
-.part.on{background:var(--ink)}
-.part.on .pn{color:var(--surface);opacity:.7}
-.part.on .pv,.part.on.done .pv,.part.nil.on .pv{color:var(--surface)}
-.part.nil.on .pv{opacity:.6}
-.part.now:after{content:"";position:absolute;bottom:3px;width:3px;height:3px;border-radius:99px;background:var(--ink4)}
-.part.on.now:after{background:var(--surface);opacity:.65}
-
 /* ── миниатюры ── */
 .thumb{aspect-ratio:3/4;border-radius:12px;overflow:hidden;background:var(--field);position:relative;box-shadow:0 2px 8px rgba(21,22,27,0.09)}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
@@ -350,21 +328,6 @@ html[data-theme="dark"] .tile .ph{background:#F2F2F0}
 .nline+.nline{margin-top:11px;padding-top:11px;border-top:1px solid var(--hair)}
 .nline:before{content:"";width:5px;height:5px;min-width:5px;border-radius:99px;background:var(--ink4);margin-top:7px}
 .nline b{color:var(--ink)}
-
-/* ── дашборд состояния ──
-   Три числа одной строкой, разделённые волосяными линиями. Раньше это были
-   три залитые плитки — они занимали четверть первого экрана и весили больше,
-   чем сами показатели под ними. Цвет здесь законный: это ровно то состояние,
-   ради которого светофор в приложении и заведён. */
-.stats{display:flex;align-items:stretch;margin:-2px 0 0}
-.stat{flex:1;background:none;border:none;cursor:pointer;font-family:inherit;text-align:left;padding:2px 0 3px 12px;
-  position:relative;min-width:0}
-.stat:first-child{padding-left:0}
-.stat+.stat:before{content:"";position:absolute;left:0;top:3px;bottom:3px;width:1px;background:var(--hair)}
-.stat:active{opacity:.6}
-.stat .n{font-size:21px;font-weight:800;letter-spacing:-0.9px;line-height:1.15;color:var(--ink)}
-.stat .l{font-size:10.5px;font-weight:600;color:var(--ink3);margin-top:1px;letter-spacing:-0.1px;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis}
 
 /* ── приём лекарств ──
    Часть дня — заголовок, под ним строки приёма. Текущая часть дня отмечена
@@ -427,3 +390,156 @@ html[data-theme="dark"] .tile .ph{background:#F2F2F0}
 .scan-bar{padding:16px 20px calc(26px + var(--safe-b));display:flex;align-items:center;justify-content:space-between;gap:16px;background:#000}
 .shutter{width:70px;height:70px;border-radius:99px;background:#fff;border:5px solid rgba(255,255,255,.35);cursor:pointer}
 .scan-hint{color:rgba(255,255,255,.85);font-size:13px;text-align:center;padding:0 20px 10px;background:#000}
+
+/* ── дашборд плиток ──────────────────────────────────────────────
+   По две в ряд. Плитка — короткое наблюдение о человеке, а не кнопка со
+   счётчиком. Цвет здесь строгий: светофор (зелёный, оранжевый, красный)
+   означает состояние здоровья и ничего больше; синий, фиолетовый и
+   бирюзовый — дела, а не диагнозы. */
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.tile2{position:relative;background:var(--surface);border-radius:var(--r);padding:12px 12px 13px;box-shadow:var(--shadow);
+  border:none;font-family:inherit;text-align:left;cursor:pointer;color:var(--ink);overflow:hidden;min-height:108px;
+  display:flex;flex-direction:column;animation:tin .34s cubic-bezier(.22,1,.36,1) both}
+@keyframes tin{from{opacity:0;transform:translateY(9px) scale(.985)}to{opacity:1;transform:none}}
+.tile2:active{transform:scale(0.98)}
+.tile2 .tk{font-size:9.5px;font-weight:800;letter-spacing:0.7px;text-transform:uppercase;color:var(--accent,var(--ink4));
+  display:flex;align-items:center;gap:5px;min-height:12px}
+.tile2 .tk .ico{width:12px;height:12px}
+.tile2 .tv{font-size:27px;font-weight:800;letter-spacing:-1.1px;line-height:1;margin-top:8px;color:var(--accent,var(--ink))}
+/* Словесное значение вместо числа — своим кеглем: «снизить ЛПНП» в 27 пунктов
+   не помещается и рвётся пополам. */
+.tile2 .tv.short{font-size:16.5px;letter-spacing:-0.4px;line-height:1.2;margin-top:9px}
+.tile2 .ts{font-size:11.5px;font-weight:700;margin-left:3px;letter-spacing:-0.2px;color:var(--ink3)}
+.tile2 .tt{font-size:12.5px;font-weight:650;letter-spacing:-0.2px;margin-top:7px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tile2 .td{font-size:10.5px;color:var(--ink3);line-height:1.35;margin-top:3px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tile2 .tsp{position:absolute;right:10px;top:9px;color:var(--accent,var(--ink3));display:flex;opacity:.9}
+.t-out{--accent:var(--bad);background:var(--bad-soft)}
+.t-edge{--accent:var(--edge);background:var(--edge-soft)}
+.t-ok{--accent:var(--ok);background:var(--ok-soft)}
+.t-take{--accent:var(--blue);background:var(--blue-soft)}
+.t-study{--accent:var(--violet);background:var(--violet-soft)}
+.t-food{--accent:var(--teal);background:var(--teal-soft)}
+.t-slate{--accent:var(--ink3)}
+/* Слово ИИ — во всю ширину и чернилами: это голос, а не показатель */
+.tile2.wide{grid-column:1/-1;min-height:0;background:#15161B;color:#fff;cursor:default;--accent:rgba(255,255,255,0.55)}
+/* В тёмной теме чернильная плитка почти совпадает с карточками — голосу
+   нужна своя граница, иначе он теряется среди чисел. */
+html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.09)}
+.tile2.wide .ap{font-size:13.5px;line-height:1.5;letter-spacing:-0.2px;margin-top:8px;color:rgba(255,255,255,0.92)}
+.tile2.wide .ap b{color:#fff;font-weight:750}
+.tile2.wide.quiet{opacity:.72}
+.tile2.wide:active{transform:none}
+
+/* ── карта систем организма ──────────────────────────────────────
+   Плоский список показателей не отвечает на главный вопрос — что вообще
+   изучено. Точки под названием: закрашенная — базовый анализ этой системы
+   сдавался, пустая — нет. */
+.cov{display:flex;gap:2px;margin-top:10px}
+.cov i{flex:1;height:9px;border-radius:3px;background:var(--hair2);display:block}
+.cov i.on{background:var(--ink)}
+.cov i.gap{margin-left:7px}
+.syst{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.sysc{background:var(--surface);border-radius:var(--r);padding:12px;box-shadow:var(--shadow);border:none;
+  font-family:inherit;text-align:left;color:var(--ink);cursor:pointer;display:block;
+  animation:tin .3s cubic-bezier(.22,1,.36,1) both}
+.sysc:active{transform:scale(0.98)}
+.sysh{display:flex;align-items:center;justify-content:space-between;min-height:20px;color:var(--stint,var(--ink3))}
+.sysb{font-size:10px;font-weight:800;padding:3px 7px;border-radius:99px;display:inline-flex;align-items:center;
+  background:var(--field);color:var(--ink3)}
+.sysb .ico{width:11px;height:11px}
+.sysb.out{background:var(--bad-soft);color:var(--bad)}
+.sysb.edge{background:var(--edge-soft);color:var(--edge)}
+.sysb.ok{background:var(--ok-soft);color:var(--ok)}
+.sysn{font-size:13.5px;font-weight:720;letter-spacing:-0.3px;margin-top:9px}
+.sysd{display:flex;gap:3px;margin-top:8px}
+.sysd i{flex:1;max-width:16px;height:4px;border-radius:2px;background:var(--hair2)}
+.sysd i.on{background:var(--stint,var(--ink))}
+.sysd.big i{height:7px;max-width:46px;border-radius:3px}
+.syss{font-size:10.5px;color:var(--ink3);margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Система без единого анализа — пунктиром: это не «здоров», это «не смотрели» */
+.sysc.s-blank{background:none;box-shadow:none;border:1px dashed var(--hair2)}
+.sysc.s-blank .sysn{color:var(--ink2)}
+.tint-wine{--stint:var(--s-wine)} .tint-indigo{--stint:var(--s-indigo)} .tint-amber{--stint:var(--s-amber)}
+.tint-moss{--stint:var(--s-moss)} .tint-cyan{--stint:var(--s-cyan)} .tint-violet{--stint:var(--s-violet)}
+.tint-teal{--stint:var(--s-teal)} .tint-slate{--stint:var(--s-slate)}
+
+/* ── неделя приёма ───────────────────────────────────────────────
+   Семь дней с понедельника, у каждого кольцо: сколько приёмов закрыто.
+   Пропуск видно, не открывая ни одного курса. */
+.wk{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.wd{background:none;border:none;padding:5px 0 5px;font-family:inherit;cursor:pointer;border-radius:13px;
+  display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--ink3);transition:background .18s}
+.wd .wdn{font-size:9.5px;font-weight:700;letter-spacing:0.3px}
+.wd .wdr{position:relative;width:30px;height:30px;display:flex;align-items:center;justify-content:center;color:var(--ink)}
+.wd .wdr svg{position:absolute;left:0;top:0}
+.wd .wdr b{font-size:12.5px;font-weight:700;color:var(--ink2)}
+.wd.now .wdr b{color:var(--ink);font-weight:800}
+.wd.now .wdn{color:var(--ink)}
+.wd.on{background:var(--field)}
+.wd.on .wdn{color:var(--ink);font-weight:800}
+.wd.fut{opacity:.45}
+.wd:active{transform:scale(0.94)}
+
+/* ── таймлайн дня ────────────────────────────────────────────────
+   День идёт сверху вниз: время слева, точка на линии, дела справа.
+   Четыре части суток стоят всегда — даже пустые, иначе непонятно,
+   куда делись день и ночь. */
+.tl{margin-top:2px}
+.tls{display:grid;grid-template-columns:36px 18px 1fr;align-items:stretch}
+.tlt{font-size:10.5px;font-weight:700;color:var(--ink4);padding:4px 4px 0 0;text-align:right}
+.tlx{position:relative}
+.tlx:before{content:"";position:absolute;left:8px;top:14px;bottom:0;width:1.5px;background:var(--hair)}
+.tls:last-child .tlx:before{display:none}
+.tlx i{position:absolute;left:3px;top:4px;width:11px;height:11px;border-radius:99px;background:var(--surface);
+  box-shadow:inset 0 0 0 2px var(--hair2)}
+.tlc{padding:0 0 14px 6px;min-width:0}
+.tls:last-child .tlc{padding-bottom:2px}
+.tlh{display:flex;align-items:center;gap:7px;padding:1px 0 2px}
+.tlh b{font-size:13px;font-weight:740;letter-spacing:-0.2px}
+.tlh span{font-size:11px;color:var(--ink3);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tlh em{font-style:normal;font-size:9px;font-weight:800;letter-spacing:0.7px;text-transform:uppercase;
+  color:var(--surface);background:var(--ink);padding:3px 7px;border-radius:99px}
+.tls.done .tlx i{background:var(--ink);box-shadow:none}
+.tls.at .tlx i{background:var(--ink);box-shadow:none;animation:tick 2.6s ease-out infinite}
+.tls.nil.at .tlh b{color:var(--ink);font-weight:740}
+@keyframes tick{0%{box-shadow:0 0 0 0 var(--hair2)}70%{box-shadow:0 0 0 8px rgba(0,0,0,0)}100%{box-shadow:0 0 0 0 rgba(0,0,0,0)}}
+.tls.miss .tlx i{box-shadow:inset 0 0 0 2px var(--edge-dot)}
+.tls.miss .tlh span{color:var(--edge)}
+.tls.nil .tlh b{font-weight:620;color:var(--ink4)}
+.tls.nil .tlh span{color:var(--ink4)}
+.tls.nil .tlc{padding-bottom:10px}
+/* Будущий день отметить нельзя: «принял завтра» — это неправда */
+.tick.lock{border-style:dashed;opacity:.4}
+
+/* ── карточка курса ──────────────────────────────────────────────
+   Семь клеток недели: закрашена — принято, полая — в этот день не пьём.
+   Столбцы те же семь, что и в ленте недели выше. */
+.crs .wkrow{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-top:11px}
+.crs .wkrow i{height:22px;border-radius:7px;background:var(--field);display:block}
+.crs .wkrow i.full{background:var(--ink)}
+.crs .wkrow i.part{background:var(--hair2)}
+.crs .wkrow i.off{background:none;box-shadow:inset 0 0 0 1px var(--hair)}
+.crs .wkrow i.fut{opacity:.5}
+.crs .wkrow i.sel{box-shadow:inset 0 0 0 2px var(--ink3)}
+
+/* ── колокольчик ─────────────────────────────────────────────── */
+.bdot{position:absolute;top:-1px;right:-1px;min-width:16px;height:16px;padding:0 4px;border-radius:99px;
+  background:var(--bad-dot);color:#fff;font-size:9.5px;font-weight:800;font-style:normal;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--canvas)}
+.grp .gi.ntc{align-items:flex-start;padding:11px 0}
+.ntc .t{padding-top:1px;font-weight:600}
+.nico{width:30px;height:30px;min-width:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+  background:var(--field);color:var(--ink2)}
+.nico.edge{background:var(--edge-soft);color:var(--edge)}
+.nico.out{background:var(--bad-soft);color:var(--bad)}
+.row.tap{cursor:pointer}
+.row.tap:active{opacity:.6}
+.logo{display:block;color:var(--ink)}
+
+/* Движение — только там, где оно объясняет. Кому оно мешает, тот его выключил
+   в системе, и мы обязаны это услышать. */
+@media (prefers-reduced-motion:reduce){
+  *{animation:none !important;transition:none !important}
+}

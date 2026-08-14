@@ -5,10 +5,12 @@ import * as S from './store.js';
 import * as db from './db.js';
 import * as MED from './meds.js';
 import { icon } from './icons.js';
-import { esc, sparkline, chart, statusDot, statusTag, statusWord, toneVar, inkTone, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale, miniRange, stackBar } from './ui.js';
+import { esc, sparkline, chart, statusDot, statusTag, statusWord, toneVar, inkTone, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale } from './ui.js';
 import { markerTitle, markerGroup, MARKERS } from './markers.js';
 import { info } from './reference.js';
 import { tgUserName, tgUser, inTelegram } from './telegram.js';
+import { tiles, notices } from './insights.js';
+import { SYSTEMS, systemById, mapSystems, coverage } from './systems.js';
 
 const head = (title, sub, right = '') => `
   <div class="head">
@@ -42,241 +44,127 @@ const chevron = () => `<svg class="chev" viewBox="0 0 24 24"><polyline points="9
 
 const avatarBtn = `<button class="rnd" data-act="settings">${icon('user', 'ico s')}</button>`;
 const addBtn = `<button class="rnd dark" data-act="add">${icon('plus', 'ico s')}</button>`;
+/* Колокольчик. Всё, что ждёт человека — деньги на счету, непрочитанные бланки,
+   непроверенные назначения, — живёт здесь, а не поперёк главной. */
+const bellBtn = (n) => `<button class="rnd" data-act="notices" aria-label="Уведомления">${icon('bell', 'ico s')}${n ? `<i class="bdot">${n > 9 ? '9' : n}</i>` : ''}</button>`;
+
+/* Знак приложения: линза и одна волна пульса внутри неё. Тот же силуэт,
+   что на иконке — чтобы приложение узнавалось и внутри, и на рабочем столе. */
+export const logoMark = (size = 44) => `<svg class="logo" viewBox="0 0 64 64" width="${size}" height="${size}" aria-hidden="true">
+  <circle cx="32" cy="32" r="23" fill="none" stroke="currentColor" stroke-width="3.6"/>
+  <path d="M15 32h5.5l4.5-9.5L32 43l4.5-11H49" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
 
 /* ══ СВОДКА ══════════════════════════════════════════════════ */
 
 export function summary(app) {
   const today = S.todayISO();
-  const ready = S.state.docs.filter(d => d.status === 'ready');
   const queue = S.state.docs.filter(d => ['queued', 'reading'].includes(d.status)).length;
-  const needsAttention = S.state.docs.filter(d => ['needs-date', 'error', 'skipped', 'duplicate', 'foreign', 'needs-file'].includes(d.status) || (d.status === 'ready' && d.pageErrors?.length)).length;
-  const plan = MED.planFor(today);
 
   if (!S.state.docs.length && !MED.state.meds.length) {
-    return head('BioLens', '') + emptyBlock('camera', 'Начни с того, что есть',
+    return `<div class="head"><div class="grow" style="display:flex;align-items:center;gap:10px">
+        ${logoMark(30)}<h1>BioLens</h1></div>${avatarBtn}</div>`
+      + emptyBlock('camera', 'Начни с того, что есть',
       'Закинь всё подряд — скриншоты анализов, фото бланков, <b>PDF из лаборатории</b> и <b>листы назначений</b>. Назначения сам разложу по утрам и вечерам, анализы сложу в линии по годам.',
       `<button class="btn" data-act="add">${icon('camera', 'ico s')}Закинуть файлы</button>
        <button class="btn ghost" data-act="scan" style="margin-top:10px">${icon('camera', 'ico s')}Снять камерой</button>`);
   }
 
-  let html = head('Здоровье', dayTitle(today), avatarBtn + addBtn);
+  const nn = notices(app).length;
+  let html = head('Здоровье', dayTitle(today), bellBtn(nn) + avatarBtn + addBtn);
 
+  /* Разбор идёт прямо сейчас — это не предупреждение, а работа на глазах.
+     Одна тонкая строка, а не карточка во всю высоту. */
   if (queue) {
     const done = S.state.queue.total ? S.state.queue.done : 0;
-    html += `<div class="card">
-      <div class="row">
-        <div class="spin"></div>
-        <div class="grow"><div class="nm">Разбираю ещё ${queue}</div>
+    html += `<div class="card flat tap" data-act="inbox" style="padding:10px 13px">
+      <div class="row"><div class="spin"></div>
+        <div class="grow"><div class="nm" style="font-size:13.5px">Разбираю ещё ${queue}</div>
           <div class="sm">${S.state.queue.total ? `${done} из ${S.state.queue.total} · можно закрыть приложение` : 'сейчас начну'}</div></div>
-        <button class="mini" data-act="inbox">Открыть</button>
-      </div>
-      <div class="prog" style="margin-top:10px"><i style="width:${S.state.queue.total ? Math.round(done / S.state.queue.total * 100) : 4}%"></i></div>
-    </div>`;
+        ${chevron()}</div></div>`;
   }
 
-  html += dashboard(app);
-  html += medsToday(app, today, plan);
+  html += tileGrid(app);
+  html += nextTake(app, today);
+  html += archive(app);
 
-  if (app.aiSummary) {
-    html += aiBlock('что изменилось', esc(app.aiSummary).replace(/\n/g, '<br>'),
-      [`${ready.length} документов`, `${S.markerKeys().length} показателей`]);
-  } else if (app.aiSummaryError) {
-    html += `<div class="card"><div class="row">${icon('warning', 'ico s')}<div class="grow sm">${esc(app.aiSummaryError)}</div>
-      <button class="mini" data-act="settings">Настройки</button></div></div>`;
-  } else if (db.settings().apiKey && S.markerKeys().length) {
-    html += `<div class="card"><div class="row"><div class="spin"></div><div class="grow sm">Смотрю, что изменилось…</div></div></div>`;
-  }
-
-  /* Три бывшие карточки во всю ширину — теперь три строки одной группы.
-     Каждая из них раньше занимала по 70 пикселей ради одной мысли. */
-  const rows = [];
-  const due = S.dueList()[0];
-  if (due) rows.push(['due', 'clock', `${due.title} — пора пересдать`, due.daysOld > 700 ? `${Math.floor(due.daysOld / 365)} года` : S.ruShort(due.last.date), {}]);
-  const goal = S.foodGoal();
-  if (goal) {
-    const t = S.dayTotals(today);
-    rows.push(['tab', 'forkknife', `Питание: ${goal.goal}`, t.count ? `${t.kcal} ккал` : 'пусто', { tab: 'food' }]);
-  }
-  rows.push(['doctor', 'stethoscope', 'Страница для врача', '', {}]);
-  html += `<div class="grp">${rows.map(([act, ic, title, value, data]) => `
-    <div class="gi" data-act="${act}"${data.tab ? ` data-tab="${data.tab}"` : ''}>
-      ${icon(ic, 'ico s')}
-      <div class="t">${esc(title)}</div>
-      ${value ? `<div class="v">${esc(value)}</div>` : ''}
-      ${chevron()}
-    </div>`).join('')}</div>`;
-
-  html += archive(app, needsAttention);
+  html += `<div class="grp">
+    <div class="gi" data-act="doctor">${icon('stethoscope', 'ico s')}<div class="t">Страница для врача</div>${chevron()}</div>
+  </div>`;
 
   html += `<div class="disc">Приложение хранит факты и напоминает о назначенном. Диагнозов не ставит.</div>`;
   return html;
 }
 
-/* ── дашборд состояния ───────────────────────────────────────────
-   Первое, что человек видит утром. Три числа в строку, под ними — то, что
-   действительно вне нормы. Раньше числа стояли залитыми плитками и съедали
-   четверть первого экрана, весив больше, чем сами показатели. */
-function dashboard(app) {
-  const list = S.markerList().filter(m => !m.stale);
-  if (!list.length) {
-    const anyDocs = S.state.docs.some(d => d.status === 'ready');
-    return `<div class="card flat"><div class="row">${icon('chartline', 'ico s')}
-      <div class="grow"><div class="nm" style="font-size:14px">${anyDocs ? 'Чисел пока нет' : 'Здесь будет твоё состояние'}</div>
-        <div class="sm">${anyDocs ? 'В разобранных документах не нашлось таблиц с показателями' : 'Закинь анализ — и увидишь, что в норме, а что нет'}</div></div>
-      <button class="mini" data-act="add">Добавить</button></div></div>`;
+/* ── дашборд наблюдений ──────────────────────────────────────────
+   Плитки по две в ряд. Каждая — не кнопка, а короткое наблюдение о человеке:
+   что вне нормы, что сдвинулось, сколько принято сегодня, чего в архиве нет
+   вовсе. Раньше на этом месте лежала одна широкая карточка со сводкой и
+   стопка предупреждений — «куча статистики», как это и называлось.
+
+   Цвет здесь работает по строгому правилу: светофор (зелёный, оранжевый,
+   красный) означает СОСТОЯНИЕ ЗДОРОВЬЯ и больше ничего. Синий, фиолетовый
+   и бирюзовый — дела, а не диагнозы: приём лекарств, изученность, еда. */
+function tileGrid(app) {
+  const list = tiles(app);
+  const ai = app.aiSummary
+    ? `<div class="tile2 wide t-ai">
+        <div class="tk">${icon('sparkle', 'ico s')}<span>что я заметил</span></div>
+        <div class="ap">${esc(app.aiSummary).replace(/\n/g, '<br>')}</div>
+      </div>`
+    : (db.settings().apiKey && S.markerKeys().length && !app.aiSummaryError
+        ? `<div class="tile2 wide t-ai quiet"><div class="tk">${icon('sparkle', 'ico s')}<span>смотрю, что изменилось…</span></div></div>`
+        : '');
+  if (!list.length && !ai) return '';
+  return `<div class="tiles">${ai}${list.map(tileEl).join('')}</div>`;
+}
+
+function tileEl(t, i) {
+  const attrs = Object.entries(t.data || {}).map(([k, v]) => ` data-${k}="${esc(v)}"`).join('');
+  const corner = t.spark ? `<div class="tsp">${sparkline(t.spark, { w: 58, h: 20 })}</div>`
+    : t.ring != null ? `<div class="tsp">${ring(t.ring, { size: 24, stroke: 3.4, color: 'currentColor' })}</div>`
+    : '';
+  return `<button class="tile2 t-${t.tone}" style="animation-delay:${Math.min(i, 6) * 28}ms" data-act="${esc(t.act)}"${attrs}>
+    <div class="tk">${esc(t.kind)}</div>
+    ${corner}
+    <div class="tv${t.small ? ' short' : ''}">${esc(t.value)}${t.suffix ? `<span class="ts">${esc(t.suffix)}</span>` : ''}</div>
+    <div class="tt">${esc(t.title)}</div>
+    <div class="td">${esc(t.sub)}</div>
+  </button>`;
+}
+
+/* ── ближайший приём на главной ──────────────────────────────────
+   Не весь день, а только то, что нужно сделать прямо сейчас: часть дня,
+   её таблетки и кружки-отметки. Весь день целиком живёт на своём экране —
+   главная не должна быть его копией. */
+function nextTake(app, date) {
+  if (!MED.state.meds.length) {
+    return `<div class="grp"><div class="gi" data-act="add">${icon('pill', 'ico s')}
+      <div class="t">Сфотографируй назначение врача</div>
+      <div class="v">разложу по дню</div>${chevron()}</div></div>`;
   }
-  const out = list.filter(m => m.status === 'out').length;
-  const edge = list.filter(m => m.status === 'edge').length;
-  const ok = list.filter(m => m.status === 'ok').length;
-  const lastDate = list.map(m => m.last.date).filter(Boolean).sort().slice(-1)[0];
-  const attention = S.attentionList();
-  const shown = attention.slice(0, 2);
+  const slot = MED.nowSlot(date);
+  const pending = slot ? slot.items.filter(i => !i.taken && !i.skipped) : [];
+  if (!slot || !pending.length) return '';
 
-  /* Одна полоса вместо трёх крупных чисел: доля видна мгновенно, а сами числа
-     стоят подписью под ней. Раньше это была четверть первого экрана. */
-  const legend = [
-    out ? `<span class="c-out">${out}</span> вне нормы` : null,
-    edge ? `<span class="c-edge">${edge}</span> у границы` : null,
-    ok ? `${ok} в норме` : null,
-  ].filter(Boolean).join(' · ');
-
-  return `<div class="card">
-    <div class="row" style="align-items:baseline">
-      <div class="grow"><div class="nm" style="font-size:13px;font-weight:750">Состояние</div></div>
-      <div class="sm">${lastDate ? `бланк ${S.ruShort(lastDate)}` : ''}</div>
-    </div>
-    ${stackBar([
-      { n: out, color: 'var(--bad-dot)' },
-      { n: edge, color: 'var(--edge-dot)' },
-      { n: ok, color: 'var(--hair2)' },
-    ])}
-    <div class="sm" style="margin-top:7px">${legend}</div>
-    ${shown.length ? `<div class="divide"></div>${shown.map(attRow).join('<div class="divide"></div>')}` : ''}
-    <div class="divide"></div>
-    <div class="row" style="cursor:pointer" data-act="tab" data-tab="markers">
-      <div class="grow sm">${attention.length > shown.length ? `Ещё ${attention.length - shown.length} требуют внимания · ` : ''}все ${list.length} ${plural(list.length, 'показатель', 'показателя', 'показателей')}</div>
+  // приём мог остаться неотмеченным с утра — тогда честнее сказать это вслух
+  const late = MED.SLOTS.findIndex(s => s.id === slot.id) < MED.SLOTS.findIndex(s => s.id === MED.currentSlot());
+  return `<div class="cap">Сейчас</div>
+  <div class="card">
+    <div class="row tap" data-act="go" data-r="meds" style="margin-bottom:2px">
+      <div class="grow"><div class="nm" style="font-size:13px;font-weight:750">${slot.title} · ${slot.at}</div>
+        <div class="sm">${late ? 'осталось неотмеченным' : `${pending.length} ${plural(pending.length, 'приём', 'приёма', 'приёмов')}`} · весь день</div></div>
       ${chevron()}
     </div>
+    ${slot.items.slice(0, 4).map(i => medRow(i, slot.id, date)).join('')}
+    ${slot.items.length > 4 ? `<div class="sm" style="padding-top:9px">и ещё ${slot.items.length - 4} в этой части дня</div>` : ''}
   </div>`;
 }
 
-/* Показатель вне нормы: название, число и полоска, на которой видно,
-   НАСКОЛЬКО он вышел за коридор. Слова «выше нормы» этого не говорят. */
-function attRow(m) {
-  const st = m.status;
-  return `<div class="att" data-act="marker" data-key="${esc(m.key)}">
-    <div class="row" style="align-items:baseline;gap:8px">
-      <div class="grow nm">${esc(m.title)}</div>
-      <div class="val" style="color:${inkTone(st)}">${S.trim(m.last.value)}<span class="unit">${esc(m.unit)}</span></div>
-    </div>
-    ${miniRange(m.last.value, m.last.refLow, m.last.refHigh, st)}
-    <div class="row" style="gap:6px">
-      <div class="grow sm">${statusWord(st, m.last.value, m.last.refLow, m.last.refHigh)} · норма ${esc(S.fmtRef(m.last))}</div>
-      ${sparkline(m.series, { w: 50, h: 18 })}
-    </div>
-  </div>`;
-}
-
-/* ── приём лекарств на сегодня ──────────────────────────────────
-   Лента дня: утро, день, вечер и ночь стоят ВСЕГДА, даже пустые. Раньше
-   показывались только те части, где что-то назначено, и человек видел
-   «утро и вечер» без всякого объяснения, куда делись остальные.
-   Нажатие на часть дня открывает её список; по умолчанию открыта текущая. */
-function medsToday(app, date, plan) {
-  const meds = MED.state.meds;
-  if (!meds.length) {
-    return `<div class="grp"><div class="gi" data-act="tab" data-tab="meds">
-      ${icon('pill', 'ico s')}
-      <div class="t">Сфотографируй назначение врача</div>
-      ${chevron()}</div></div>`;
-  }
-
-  let html = '';
-  const check = MED.unconfirmed();
-  if (check.length) {
-    html += `<div class="grp"><div class="gi" data-act="tab" data-tab="meds">
-      ${icon('warning', 'ico s')}
-      <div class="t">${check.length === 1 ? 'Назначение не проверено' : 'Не проверены назначения'}</div>
-      <div class="v">${check.length === 1 ? 'сверь с листом' : `${check.length} шт.`}</div>
-      ${chevron()}</div></div>`;
-  }
-
-  const ask = MED.askMeds(date);
-  if (ask.length) {
-    html += `<div class="card note">
-      <div class="row">${icon('clock', 'ico s')}<div class="grow"><div class="nm" style="font-size:13.5px">Ты ещё принимаешь ${esc(ask[0].name)}?</div>
-        <div class="sm">Назначено ${ask[0].docDate ? S.ruDate(ask[0].docDate) : 'давно'}, срок не указан — в расписание не ставлю</div></div></div>
-      <div class="chips" style="margin-top:10px">
-        <button class="chip on" data-act="med-keep" data-id="${esc(ask[0].id)}">Принимаю</button>
-        <button class="chip" data-act="med-stop" data-id="${esc(ask[0].id)}">Уже закончил</button>
-      </div>
-      ${ask.length > 1 ? `<div class="sm" style="margin-top:8px">И ещё ${ask.length - 1} ${plural(ask.length - 1, 'курс ждёт', 'курса ждут', 'курсов ждут')} ответа</div>` : ''}
-    </div>`;
-  }
-
-  const d = MED.dayCount(date);
-  if (!plan.length) {
-    const act = MED.activeMeds(date).length;
-    return html + `<div class="grp"><div class="gi" data-act="tab" data-tab="meds">
-      ${icon('pill', 'ico s')}
-      <div class="t">${act ? 'У курсов не указано время приёма' : 'Курсов сейчас нет'}</div>
-      ${chevron()}</div></div>`;
-  }
-
-  html += `<div class="cap">Приём лекарств</div>`;
-  html += `<div class="card">${dayRibbon(app, date, plan, d)}</div>`;
-  return html;
-}
-
-/* Лента дня + список выбранной части. Живёт отдельной функцией: тем же
-   блоком пользуется вкладка «Лекарства», и расходиться они не должны. */
-function dayRibbon(app, date, plan, d) {
-  const nowId = MED.currentSlot();
-  const byId = Object.fromEntries(plan.map(s => [s.id, s]));
-  /* Выбрана та часть дня, на которую человек нажал; иначе — текущая,
-     а если в ней уже всё принято, ближайшая, где ещё есть дела.
-     Нажать можно и на пустую часть — тогда внизу честно написано, что на это
-     время ничего не назначено. Раньше выбор пустой части молча откатывался,
-     и кнопка выглядела сломанной. */
-  const sel = (app.medSlot && MED.SLOTS.some(s => s.id === app.medSlot)) ? app.medSlot
-    : (MED.nowSlot(date)?.id || nowId);
-  const cur = byId[sel];
-
-  const done = d.total && d.taken === d.total;
-  const left = MED.SLOTS.map(s => {
-    const has = byId[s.id];
-    const takenIn = has ? has.items.filter(i => i.taken).length : 0;
-    const total = has ? has.items.length : 0;
-    // ⚠️не 'empty': этот класс в приложении уже занят пустым экраном
-    // с отступом в 34 пикселя, и плитка раздувалась втрое
-    const state = !total ? 'nil' : takenIn === total ? 'done' : 'todo';
-    return `<button class="part ${state} ${sel === s.id ? 'on' : ''} ${nowId === s.id ? 'now' : ''}"
-      data-act="med-part" data-slot="${s.id}">
-      <div class="pn">${s.title}</div>
-      <div class="pv">${state === 'nil' ? '—' : state === 'done' ? icon('check', 'ico s') : `${total - takenIn}`}</div>
-    </button>`;
-  }).join('');
-
-  // «осталось 3» и «1 из 4» — одно и то же число двумя способами; хватает одного
-  let html = `<div class="nm" style="font-size:13px;font-weight:750;margin-bottom:9px">${
-    done ? 'Сегодня всё принято' : `Осталось ${d.left} ${plural(d.left, 'приём', 'приёма', 'приёмов')}`}</div>`;
-  html += `<div class="ribbon">${left}</div>`;
-
-  html += `<div class="divide"></div>`;
-  if (!cur || !cur.items.length) {
-    // «на ночь» уже содержит предлог — иначе выходило «На «на ночь»»
-    const s = MED.SLOTS.find(x => x.id === sel);
-    const when = !s ? 'на это время' : s.id === 'night' ? 'на ночь' : 'на ' + s.title.toLowerCase();
-    html += `<div class="sm" style="padding:5px 0 3px">${when[0].toUpperCase() + when.slice(1)} ничего не назначено.</div>`;
-  } else {
-    html += cur.items.map(i => medRow(i, sel, date)).join('');
-  }
-  return html;
-}
 
 /* Строка приёма: отметка слева, лекарство посередине. Стрелка здесь лишняя —
    вся строка и так открывается, а знак «открывается» спорил бы с кружком. */
-function medRow(item, slotId, date) {
+function medRow(item, slotId, date, { lock = false } = {}) {
   const m = item.med;
   const p = MED.progressOf(m, date);
   const sub = [
@@ -284,9 +172,14 @@ function medRow(item, slotId, date) {
     MED.foodText(m.food),
     p.total ? `день ${Math.max(1, p.day)} из ${p.total}` : null,
   ].filter(Boolean).join(' · ');
+  /* Будущий день отмечать нельзя: «принял завтра» — это неправда, а здесь
+     на неправде строится вся история приёма. */
+  const mark = lock
+    ? `<span class="tick lock" aria-hidden="true"></span>`
+    : `<button class="tick${item.taken ? ' on' : ''}" data-act="take" data-id="${esc(m.id)}" data-slot="${esc(slotId)}" data-date="${esc(date)}"
+        aria-label="${item.taken ? 'Отменить отметку' : 'Отметить приём'}">${icon('check', 'ico s')}</button>`;
   return `<div class="med-row${item.taken ? ' done' : ''}" data-act="med" data-id="${esc(m.id)}">
-    <button class="tick${item.taken ? ' on' : ''}" data-act="take" data-id="${esc(m.id)}" data-slot="${esc(slotId)}" data-date="${esc(date)}"
-      aria-label="${item.taken ? 'Отменить отметку' : 'Отметить приём'}">${icon('check', 'ico s')}</button>
+    ${mark}
     <div class="grow">
       <div class="nm">${esc(m.name)}</div>
       <div class="sm">${sub || 'доза не указана — допиши'}</div>
@@ -294,21 +187,36 @@ function medRow(item, slotId, date) {
   </div>`;
 }
 
+/* ══ КОЛОКОЛЬЧИК ═════════════════════════════════════════════
+   Всё, что ждёт человека, в одном списке. Главная больше не начинается
+   с предупреждений — она начинается с того, ради чего её открыли. */
+
+export function noticesView(app) {
+  const list = notices(app);
+  let html = backHeadWide('Уведомления', list.length ? `${list.length} ${plural(list.length, 'дело', 'дела', 'дел')}` : 'пока тихо');
+  if (!list.length) {
+    return html + emptyBlock('bell', 'Ничего не ждёт',
+      'Здесь появится то, что требует твоего ответа: непрочитанные бланки, назначения без подтверждения, кончившиеся деньги на счету модели.');
+  }
+  html += `<div class="grp">${list.map(n => {
+    const attrs = Object.entries(n.data || {}).map(([k, v]) => ` data-${k}="${esc(v)}"`).join('');
+    return `<div class="gi ntc" data-act="${esc(n.act)}"${attrs}>
+      <span class="nico ${esc(n.tone)}">${icon(n.icon, 'ico s')}</span>
+      <div class="t"><div class="nm" style="font-size:14px">${esc(n.title)}</div>
+        <div class="sm">${esc(n.sub)}</div></div>
+      ${chevron()}</div>`;
+  }).join('')}</div>`;
+  html += `<div class="disc">Приложение живёт внутри Телеграма и не шлёт push-уведомлений. Всё, что важно, ждёт здесь.</div>`;
+  return html;
+}
+
 /* ── архив внизу главной ─────────────────────────────────────────
    Один блок, а не россыпь: превью документов, строки добавления и
    раскрытие «показать все» живут внутри одной карточки. Раньше архив
    обещал тринадцать файлов, а показывал шесть, и дальше идти было некуда. */
-function archive(app, needsAttention) {
+function archive(app) {
   const all = S.state.docs;
   let html = '';
-  if (needsAttention) {
-    html += `<div class="grp"><div class="gi" data-act="inbox">
-      ${icon('warning', 'ico s')}
-      <div class="t">${needsAttention} ${plural(needsAttention, 'документ ждёт', 'документа ждут', 'документов ждут')} тебя</div>
-      <div class="v">нет даты или не прочитан</div>
-      ${chevron()}</div></div>`;
-  }
-
   const addRows = `
     <div class="gi" data-act="scan">${icon('camera', 'ico s')}<div class="t">Снять бланк камерой</div>${chevron()}</div>
     <div class="gi" data-act="add">${icon('file', 'ico s')}<div class="t">Загрузить файл или PDF</div>${chevron()}</div>`;
@@ -334,7 +242,7 @@ function archive(app, needsAttention) {
       ${all.length > 8 ? `<div class="gi" data-act="archive-toggle">${icon('package', 'ico s')}
         <div class="t">${open ? 'Свернуть' : `Показать все ${all.length}`}</div>${chevron()}</div>` : ''}
       ${addRows}
-      <div class="gi" data-act="tab" data-tab="timeline">${icon('calendar', 'ico s')}<div class="t">Хроника по годам</div>${chevron()}</div>
+      <div class="gi" data-act="go" data-r="timeline">${icon('calendar', 'ico s')}<div class="t">Хроника по годам</div>${chevron()}</div>
     </div>
   </div>`;
   return html;
@@ -346,43 +254,137 @@ const dayTitle = (iso) => {
   return `${WEEKDAYS[new Date(y, m - 1, d).getDay()]}, ${S.ruDayMonth(iso)}`;
 };
 
-/* ══ ПОКАЗАТЕЛИ ══════════════════════════════════════════════ */
+/* ══ ТЕЛО: СИСТЕМЫ ОРГАНИЗМА ═════════════════════════════════
+   Плоский список показателей — это алфавит: сорок строк, по которым нельзя
+   понять главного. Человек думает системами: печень, почки, кровь. И самое
+   важное, чего список не говорил никогда, — ЧЕГО НЕТ. Пустая система это не
+   «здоров», это «не смотрели ни разу». */
 
 export function markers(app) {
   const list = S.markerList();
   if (!list.length) {
-    return head('Показатели', '') + emptyBlock('chartline', 'Пока нет ни одной линии',
-      'Как только разберу первый анализ, здесь появятся показатели — каждый со своей историей.',
+    return head('Тело', '') + emptyBlock('heartbeat', 'Тело пока не изучено',
+      'Как только разберу первый анализ, здесь загорятся системы: кровь, печень, почки, гормоны. И будет видно, про какие из них я ещё ничего не знаю.',
       `<button class="btn" data-act="add">Закинуть анализ</button>`);
   }
 
-  const groups = { all: 'Все', ...Object.fromEntries([...new Set(list.map(m => m.group))].map(g => [g, GROUP_TITLES[g] || 'Прочее'])) };
-  const filter = app.markerFilter || 'all';
-  const shown = filter === 'all' ? list : list.filter(m => m.group === filter);
+  const sys = mapSystems(list);
+  const cov = coverage(list);
+  const attention = list.filter(m => !m.stale && (m.status === 'out' || m.status === 'edge'));
 
-  const attention = shown.filter(m => !m.stale && (m.status === 'out' || m.status === 'edge'));
-  const fine = shown.filter(m => !m.stale && m.status === 'ok');
-  const unknown = shown.filter(m => !m.stale && m.status === 'unknown');
-  const stale = shown.filter(m => m.stale);
+  let html = head('Тело', `${list.length} ${plural(list.length, 'показатель', 'показателя', 'показателей')} · ${cov.systemsTouched} ${plural(cov.systemsTouched, 'система', 'системы', 'систем')} из ${cov.systemsTotal}`, avatarBtn + addBtn);
 
-  /* «Последний забор» — дата последнего бланка С ЧИСЛАМИ. Раньше сюда попадало
-     любое свежее УЗИ, и подпись обещала анализ, которого не было. */
+  /* Одна полоса вместо абзаца: сколько базовых анализов вообще когда-либо
+     сдавалось. Это и есть ответ на «что у меня изучено, а что нет». */
+  html += `<div class="card">
+    <div class="row" style="align-items:baseline">
+      <div class="grow"><div class="nm" style="font-size:13px;font-weight:750">Изучено</div></div>
+      <div class="sm"><b style="color:var(--ink)">${cov.known}</b> из ${cov.total} базовых анализов</div>
+    </div>
+    <div class="cov">${(() => {
+      /* Каждая клетка — один базовый анализ. Закрашена — сдавался хоть раз.
+         Пробел между группами клеток — граница системы. Это буквальный ответ
+         на вопрос «сколько изучено», без процентов и без пересказа. */
+      const have = new Set(list.map(m => m.key));
+      return SYSTEMS.map((sd, si) => sd.core.map((k, i) =>
+        `<i class="${have.has(k) ? 'on' : ''}${i === 0 && si ? ' gap' : ''}" title="${esc(sd.title)}"></i>`).join('')).join('');
+    })()}</div>
+    ${cov.blank.length ? `<div class="sm" style="margin-top:8px">Ни одного анализа: ${cov.blank.map(s => esc(s.title.toLowerCase())).join(', ')}</div>` : ''}
+  </div>`;
+
+  html += `<div class="syst">${sys.map(sysCard).join('')}</div>`;
+
+  if (attention.length) {
+    html += `<div class="cap">Требует внимания · ${attention.length}</div>
+      <div class="card list">${attention.map(row).join('')}</div>`;
+  }
+
+  html += `<div class="grp">
+    <div class="gi" data-act="go" data-r="markers-all">${icon('chartline', 'ico s')}<div class="t">Все показатели списком</div>
+      <div class="v">${list.length}</div>${chevron()}</div>
+    <div class="gi" data-act="due">${icon('clock', 'ico s')}<div class="t">Что пора пересдать</div>
+      <div class="v">${S.dueList().length || '—'}</div>${chevron()}</div>
+  </div>`;
+  return html;
+}
+
+/* Карточка системы: значок, состояние, и точки — сколько базовых анализов
+   этой системы вообще сдавалось. Полая точка означает «не смотрели». */
+function sysCard(s) {
+  const badge = s.out ? `<span class="sysb out">${s.out}</span>`
+    : s.edge ? `<span class="sysb edge">${s.edge}</span>`
+    : s.state === 'ok' ? `<span class="sysb ok">${icon('check', 'ico s')}</span>` : '';
+  const sub = !s.markers.length ? 'ни одного анализа'
+    : s.state === 'stale' ? `последний раз ${S.ruShort(s.lastDate)}`
+    : `${s.markers.length} ${plural(s.markers.length, 'показатель', 'показателя', 'показателей')} · ${S.ruShort(s.lastDate)}`;
+  return `<button class="sysc s-${s.state} tint-${s.tint}" data-act="system" data-id="${esc(s.id)}">
+    <div class="sysh">${icon(s.icon, 'ico s')}${badge}</div>
+    <div class="sysn">${esc(s.title)}</div>
+    <div class="sysd">${s.core.map((k, i) => `<i class="${i < s.coreHave ? 'on' : ''}"></i>`).join('')}</div>
+    <div class="syss">${esc(sub)}</div>
+  </button>`;
+}
+
+/* ── одна система ────────────────────────────────────────────── */
+
+export function systemView(app) {
+  const def = systemById(app.param.id);
+  if (!def) return backHead('Система', '') + `<div class="card">Не найдено.</div>`;
+  const list = S.markerList();
+  const s = mapSystems(list).find(x => x.id === def.id);
+
+  let html = backHead(def.title, def.about);
+
+  html += `<div class="card">
+    <div class="row" style="align-items:baseline">
+      <div class="grow"><div class="nm" style="font-size:13px;font-weight:750">Изучено</div></div>
+      <div class="sm"><b style="color:var(--ink)">${s.coreHave}</b> из ${s.coreTotal} базовых анализов</div>
+    </div>
+    <div class="sysd big" style="margin-top:9px">${def.core.map((k, i) => `<i class="${i < s.coreHave ? 'on' : ''}"></i>`).join('')}</div>
+    ${s.lastDate ? `<div class="sm" style="margin-top:9px">Последний бланк с этими числами — ${S.ruDate(s.lastDate)}${s.daysOld > 400 ? `, это ${Math.floor(s.daysOld / 365)} ${plural(Math.floor(s.daysOld / 365), 'год', 'года', 'лет')} назад` : ''}.</div>` : ''}
+  </div>`;
+
+  if (s.missing.length) {
+    html += `<div class="card note">
+      <div class="row">${icon('eye', 'ico s')}<div class="grow"><div class="nm" style="font-size:14px">Чего я не видел</div></div></div>
+      <div class="sm" style="margin:8px 0 11px;line-height:1.5">Этих анализов нет ни в одном бланке. Это не значит, что с ними что-то не так — я просто ничего о них не знаю.</div>
+      <div class="chips">${s.missingTitles.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div>
+      <button class="mini" data-act="copy-missing" data-id="${esc(def.id)}" style="margin-top:11px">Скопировать список для лаборатории</button>
+    </div>`;
+  }
+
+  if (s.markers.length) {
+    const fresh = s.markers.filter(m => !m.stale);
+    const old = s.markers.filter(m => m.stale);
+    if (fresh.length) html += `<div class="cap">Что известно · ${fresh.length}</div><div class="card list">${fresh.map(row).join('')}</div>`;
+    if (old.length) html += `<div class="cap">Давно не мерил · ${old.length}</div><div class="card list">${old.map(row).join('')}</div>`;
+  } else {
+    html += emptyBlock(def.icon, 'Пусто',
+      'Ни одного числа по этой системе в архиве нет. Появится бланк — всё встанет сюда само.',
+      `<button class="btn ghost" data-act="add">Закинуть анализ</button>`);
+  }
+
+  html += `<div class="disc">Ключевые анализы — обычный базовый набор для этой системы, а не назначение. Что сдавать именно тебе, решает врач.</div>`;
+  return html;
+}
+
+/* Плоский список — на случай, когда ищешь конкретную строку из бланка */
+export function markersAll(app) {
+  const list = S.markerList();
+  const attention = list.filter(m => !m.stale && (m.status === 'out' || m.status === 'edge'));
+  const fine = list.filter(m => !m.stale && m.status === 'ok');
+  const unknown = list.filter(m => !m.stale && m.status === 'unknown');
+  const stale = list.filter(m => m.stale);
   const lastDate = list.map(m => m.last.date).filter(Boolean).sort().slice(-1)[0];
 
-  let html = head('Показатели', `${list.length} ${plural(list.length, 'показатель', 'показателя', 'показателей')}${lastDate ? ` · последний ${S.ruShort(lastDate)}` : ''}`, avatarBtn + addBtn);
-  html += `<div class="segs scroll">${Object.entries(groups).map(([k, t]) =>
-    `<button class="seg ${filter === k ? 'on' : ''}" data-act="filter" data-group="${k}">${esc(t)}</button>`).join('')}</div>`;
-
+  let html = backHeadWide('Все показатели', `${list.length} ${plural(list.length, 'показатель', 'показателя', 'показателей')}${lastDate ? ` · последний ${S.ruShort(lastDate)}` : ''}`, addBtn);
   const section = (title, arr) => arr.length ? `<div class="cap">${title} · ${arr.length}</div><div class="card list">${arr.map(row).join('')}</div>` : '';
   html += section('Требует внимания', attention);
-
   html += section('В норме', fine);
   html += section('Норма не указана', unknown);
   html += section('Давно не мерил', stale);
   return html;
 }
-
-const GROUP_TITLES = { blood: 'Кровь', liver: 'Печень', lipids: 'Липиды', iron: 'Железо', hormones: 'Гормоны', vitamins: 'Витамины', kidney: 'Почки', sugar: 'Сахар', other: 'Прочее' };
 
 /* Строка списка. Раньше справа под числом висела разница вроде «+3.4» — без
    единицы и без ответа на вопрос «с какого момента». Направление и так видно
@@ -979,14 +981,16 @@ export function inbox(app) {
 /* ══ ЛЕКАРСТВА ═══════════════════════════════════════════════ */
 
 export function medsView(app) {
-  const date = S.todayISO();
+  const today = S.todayISO();
+  const week = weekDays(today);
+  const date = week.includes(app.medDate) ? app.medDate : today;
   const all = MED.state.meds;
   const plan = MED.planFor(date);
   const d = MED.dayCount(date);
   const active = MED.activeMeds(date);
 
   const addBtnMed = `<button class="rnd dark" data-act="med-new">${icon('plus', 'ico s')}</button>`;
-  let html = head('Лекарства', dayTitle(date), avatarBtn + addBtnMed);
+  let html = backHeadWide('Лекарства', dayTitle(today), addBtnMed);
 
   if (!all.length) {
     return html + emptyBlock('pill', 'Назначения — сюда',
@@ -996,10 +1000,8 @@ export function medsView(app) {
       + `<div class="disc">Приложение только помнит назначенное врачом. Оно ничего не назначает и не отменяет.</div>`;
   }
 
-  /* Про непроверенное здесь молчим: это написано в каждой строке курса ниже.
-     Одна мысль в одном месте — иначе экран превращается в напоминалку. */
-  const check = MED.unconfirmed();
-
+  /* Про непроверенное здесь молчим: это написано в каждой карточке курса ниже
+     и висит на колокольчике. Одна мысль в одном месте. */
   const ask = MED.askMeds(date);
   if (ask.length) {
     html += `<div class="cap">Ещё принимаешь? · ${ask.length}</div>`;
@@ -1016,11 +1018,18 @@ export function medsView(app) {
     }
   }
 
-  if (plan.length) {
-    // тот же блок, что на главной: расписание дня не должно выглядеть
-    // в двух местах по-разному
-    html += `<div class="cap">Сегодня</div><div class="card">${dayRibbon(app, date, plan, d)}</div>`;
-  } else if (active.length) {
+  /* Неделя и день — одним блоком. Сверху семь дней с кольцами: сразу видно,
+     где были пропуски. Ниже — сам день сверху вниз, от утра к ночи. */
+  html += `<div class="card">
+    ${weekStrip(week, date, today)}
+    <div class="divide"></div>
+    ${dayHead(date, today, d)}
+    ${plan.length || active.length
+      ? dayTimeline(app, date, today)
+      : `<div class="sm" style="padding:4px 0 2px">На этот день ничего не назначено.</div>`}
+  </div>`;
+
+  if (!plan.length && active.length) {
     html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
       <div class="grow sm">У активных курсов не указано время приёма — открой курс и поставь утро, день или вечер.</div></div></div>`;
   }
@@ -1029,9 +1038,8 @@ export function medsView(app) {
   const past = all.filter(m => ['done', 'stopped'].includes(MED.statusOf(m, date)));
 
   if (active.length) {
-    html += `<div class="cap">Курсы · ${active.length}</div><div class="card list">`;
-    html += active.map(m => medCourseRow(m, date)).join('');
-    html += `</div>`;
+    html += `<div class="cap">Курсы · ${active.length}</div>`;
+    html += active.map(m => medCourseCard(m, date, week, today)).join('');
   }
   if (later.length) {
     html += `<div class="cap">Начнутся позже</div><div class="card list">${later.map(m => medCourseRow(m, date)).join('')}</div>`;
@@ -1041,15 +1049,122 @@ export function medsView(app) {
   }
 
   html += `<div class="grp">
-    <div class="gi" data-act="med-new">${icon('plus', 'ico s')}<div class="t">Добавить лекарство руками</div>${chevron()}</div>
     <div class="gi" data-act="add">${icon('camera', 'ico s')}<div class="t">Снять назначение врача</div>${chevron()}</div>
+    <div class="gi" data-act="med-new">${icon('plus', 'ico s')}<div class="t">Добавить лекарство руками</div>${chevron()}</div>
   </div>`;
   html += `<div class="disc">Приложение не звонит и не шлёт уведомлений — оно живёт внутри Телеграма. Лечение назначает врач: здесь оно только записано.</div>`;
   return html;
 }
 
+/* ── неделя ──────────────────────────────────────────────────────
+   Семь дней с понедельника. Кольцо показывает, сколько приёмов закрыто:
+   пропуск видно, не открывая ни одного курса. Нажатие переключает день —
+   отметить забытую утреннюю таблетку можно задним числом. */
+const WD = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
+
+function weekDays(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const shift = (new Date(y, m - 1, d).getDay() + 6) % 7;   // неделя начинается с понедельника
+  const monday = MED.addDays(iso, -shift);
+  return Array.from({ length: 7 }, (_, i) => MED.addDays(monday, i));
+}
+
+function weekStrip(week, date, today) {
+  return `<div class="wk">${week.map((d, i) => {
+    const c = MED.dayCount(d);
+    const future = d > today;
+    const cls = [d === date ? 'on' : '', d === today ? 'now' : '', future ? 'fut' : ''].filter(Boolean).join(' ');
+    const pct = c.total ? c.taken / c.total : 0;
+    return `<button class="wd ${cls}" data-act="med-day" data-date="${d}">
+      <span class="wdn">${WD[i]}</span>
+      <span class="wdr">${c.total ? ring(future ? 0 : pct, { size: 30, stroke: 2.6, color: 'currentColor' }) : ''}
+        <b>${+d.slice(8, 10)}</b></span>
+    </button>`;
+  }).join('')}</div>`;
+}
+
+function dayHead(date, today, d) {
+  const rel = date === today ? 'Сегодня'
+    : date === MED.addDays(today, -1) ? 'Вчера'
+    : date === MED.addDays(today, 1) ? 'Завтра'
+    : S.ruDayMonth(date);
+  const sub = !d.total ? 'ничего не назначено'
+    : d.left ? `осталось ${d.left} ${plural(d.left, 'приём', 'приёма', 'приёмов')}`
+    : 'всё принято';
+  return `<div class="row" style="align-items:baseline;margin-bottom:10px">
+    <div class="grow"><div class="nm" style="font-size:14px;font-weight:760">${rel}${date === today ? '' : `, ${S.ruDayMonth(date)}`}</div></div>
+    <div class="sm">${sub}</div>
+    ${date !== today ? `<button class="mini" data-act="med-day" data-date="${today}" style="min-height:30px;padding:5px 11px">Сегодня</button>` : ''}
+  </div>`;
+}
+
+/* ── таймлайн дня ────────────────────────────────────────────────
+   День идёт сверху вниз: утро, день, вечер, ночь — всегда все четыре, со
+   своим временем и точкой на линии. Раньше это были четыре плитки, из которых
+   человек видел «утро и вечер» и не понимал, куда делось остальное. */
+function dayTimeline(app, date, today) {
+  const plan = MED.planFor(date);
+  const byId = Object.fromEntries(plan.map(s => [s.id, s]));
+  const order = MED.SLOTS.map(s => s.id);
+  const nowIdx = order.indexOf(MED.currentSlot());
+  const isToday = date === today;
+  const future = date > today;
+
+  return `<div class="tl">${MED.SLOTS.map((s, i) => {
+    const cur = byId[s.id];
+    const items = cur ? cur.items : [];
+    const taken = items.filter(x => x.taken).length;
+    const passed = future ? false : (!isToday || i < nowIdx);
+    const isNow = isToday && i === nowIdx;
+    /* Метку «сейчас» ставим и на пустую часть дня: иначе в спокойный час
+       таймлайн выглядит так, будто время в нём остановилось. */
+    const state = !items.length ? 'nil'
+      : taken === items.length ? 'done'
+      : isNow ? 'now'
+      : passed ? 'miss'
+      : 'wait';
+    const note = !items.length ? 'ничего'
+      : state === 'done' ? 'принято'
+      : state === 'miss' ? `не отмечено ${items.length - taken}`
+      : `${items.length - taken} из ${items.length}`;
+    return `<div class="tls ${state}${isNow ? ' at' : ''}">
+      <div class="tlt">${s.at}</div>
+      <div class="tlx"><i></i></div>
+      <div class="tlc">
+        <div class="tlh"><b>${s.title}</b><span>${note}</span>${isNow ? '<em>сейчас</em>' : ''}</div>
+        ${items.map(x => medRow(x, s.id, date, { lock: future })).join('')}
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+/* Карточка курса: что это, когда принимать и как шла неделя.
+   Семь клеток внизу стоят в тех же колонках, что и неделя наверху, —
+   видно, в какие дни лекарство вообще положено пить. */
+function medCourseCard(m, date, week, today) {
+  const unchecked = m.source === 'ai' && !m.confirmed;
+  const p = MED.progressOf(m, date);
+  const slots = (m.slots || []);
+  return `<div class="card crs tap" data-act="med" data-id="${esc(m.id)}">
+    <div class="row">
+      <div class="grow"><div class="nm">${esc(m.name)}${m.dose ? ` · ${esc(m.dose)}` : ''}</div>
+        <div class="sm">${esc(MED.scheduleText(m))}${MED.foodText(m.food) ? ', ' + MED.foodText(m.food) : ''}</div></div>
+      ${unchecked ? `<span class="tag edge">сверь</span>` : ''}
+      ${chevron()}
+    </div>
+    <div class="wkrow">${week.map(d => {
+      const on = MED.isOnToday(m, d);
+      const marks = slots.map(s => MED.intakeOf(m.id, d, s)?.status);
+      const full = on && marks.length && marks.every(x => x === 'taken');
+      const some = on && marks.some(x => x === 'taken');
+      const cls = [!on ? 'off' : full ? 'full' : some ? 'part' : '', d > today ? 'fut' : '', d === date ? 'sel' : ''].filter(Boolean).join(' ');
+      return `<i class="${cls}"></i>`;
+    }).join('')}</div>
+    <div class="sm" style="margin-top:7px">${esc(MED.courseText(m, date))}${p.total ? ` · осталось ${Math.max(0, p.total - Math.max(1, p.day))} ${plural(Math.max(0, p.total - Math.max(1, p.day)), 'день', 'дня', 'дней')}` : ''}</div>
+  </div>`;
+}
+
 function medCourseRow(m, date) {
-  const st = MED.statusOf(m, date);
   const unchecked = m.source === 'ai' && !m.confirmed;
   return `<div class="it" data-act="med" data-id="${esc(m.id)}">
     <div class="grow"><div class="nm">${esc(m.name)}${m.dose ? ` · ${esc(m.dose)}` : ''}</div>
@@ -1148,8 +1263,8 @@ export function food(app) {
   const tg = S.dayTargets();
   const goal = S.foodGoal();
 
-  let html = head('Тарелка', date === today ? 'сегодня' : S.ruDate(date),
-    `<button class="rnd" data-act="settings">${icon('user', 'ico s')}</button><button class="rnd dark" data-act="add-meal">${icon('camera', 'ico s')}</button>`);
+  let html = backHeadWide('Тарелка', date === today ? 'сегодня' : S.ruDate(date),
+    `<button class="rnd dark" data-act="add-meal">${icon('camera', 'ico s')}</button>`);
 
   if (goal) {
     html += `<div class="card note tap" data-act="marker" data-key="${esc(goal.key)}">
@@ -1378,19 +1493,6 @@ export function doctor(app) {
 
 export function settingsView(app) {
   const s = db.settings();
-  const models = app.models || db.cachedModels() || [];
-  const vision = models.filter(m => (m.inputs || []).includes('image'));
-  const q = (app.modelQuery || '').toLowerCase().trim();
-  const pool = app.modelTab === 'chat' ? models : vision;
-  const freeOnly = !!app.modelFree;
-  const shownLimit = app.modelLimit || 25;
-  const matched = pool
-    .filter(m => !freeOnly || m.free)
-    .filter(m => !q || m.id.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q)
-      || (/беспл|free/.test(q) && m.free));
-  const filtered = matched.slice(0, shownLimit);
-  const freeCount = pool.filter(m => m.free).length;
-
   let html = backHead('Настройки', 'ключ, модель, данные');
 
   html += `<div class="cap">Ключ OpenRouter</div>
@@ -1404,80 +1506,18 @@ export function settingsView(app) {
     <div class="sm" style="line-height:1.5">Берётся на openrouter.ai → Keys. Хранится только здесь и уходит напрямую в OpenRouter.</div>
   </div>`;
 
-  html += `<div class="cap">Модель</div>
-  <div class="card">
-    <div class="kv"><span class="k">Снимки</span><span class="v" style="font-size:12.5px;font-weight:600">${s.modelVision ? esc(s.modelVision) : 'не выбрана'}</span></div>
-    <div class="kv"><span class="k">Тексты</span><span class="v" style="font-size:12.5px;font-weight:600">${s.modelChat ? esc(s.modelChat) : 'та же'}</span></div>
-    <div class="divide"></div>
-    <div class="row">
-      <button class="mini" data-act="refresh-models">${app.modelsLoading ? 'Обновляю…' : 'Обновить список'}</button>
-      <div class="grow sm">${models.length ? `${models.length} моделей · ${vision.length} с картинками` : 'список не загружен'}</div>
-    </div>
-  </div>`;
-
-  if (models.length) {
-    html += `<div class="segs">
-      <button class="seg ${app.modelTab !== 'chat' ? 'on' : ''}" data-act="model-tab" data-tab="vision">Для снимков</button>
-      <button class="seg ${app.modelTab === 'chat' ? 'on' : ''}" data-act="model-tab" data-tab="chat">Для текстов</button>
-    </div>
-    <div class="card" style="padding:12px 16px">
-      <input type="text" id="modelQuery" placeholder="поиск: gemini, gemma, claude…" value="${esc(app.modelQuery || '')}">
-      <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:8px">
-        <button class="chip ${!freeOnly ? 'on' : ''}" data-act="model-free" data-v="0">Все · ${pool.length}</button>
-        <button class="chip ${freeOnly ? 'on' : ''}" data-act="model-free" data-v="1">Бесплатные · ${freeCount}</button>
-      </div>
-      <div class="sm" style="margin-top:9px;line-height:1.45">${app.modelTab === 'chat'
-        ? `Любая модель из ${models.length}: этой достаются вопросы по архиву и тексты.`
-        : `Только те, что умеют читать картинки — ${pool.length} из ${models.length}. Текстовые модели (например gpt-oss) бланк не увидят.`}</div>
-    </div>`;
-
-    if (freeOnly) {
-      html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
-        <div class="grow sm" style="line-height:1.5">У бесплатных моделей свои ограничения: <b>примерно 50 запросов в сутки</b> и очередь в час пик. Бланки они читают заметно хуже платных — <b>обязательно сверь распознанные числа с оригиналом</b>. Для пробы годятся, для архива лучше платная.</div></div></div>`;
-    }
-
-    if (!filtered.length) {
-      // человек ищет модель, которой просто нет в этой вкладке — скажем об этом прямо
-      const elsewhere = models.filter(m => !q || m.id.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q))
-        .filter(m => !freeOnly || m.free);
-      const blind = elsewhere.filter(m => !(m.inputs || []).includes('image'));
-      html += `<div class="card"><div class="sm" style="line-height:1.55">${
-        (app.modelTab !== 'chat' && blind.length)
-          ? `<b>${esc(blind[0].name)}</b> не умеет читать картинки — такие модели работают только с текстом. Она есть во вкладке <b>«Для текстов»</b>: там ей достанутся вопросы по архиву и формулировки, а бланки будет разбирать другая модель.`
-          : freeOnly
-            ? 'Среди умеющих читать картинки бесплатных сейчас нет. Сними фильтр или загляни во вкладку «Для текстов».'
-            : 'Ничего не нашлось. Попробуй другое слово или обнови список.'}</div>
-        ${(app.modelTab !== 'chat' && blind.length) ? `<div class="row" style="margin-top:11px"><button class="mini" data-act="model-tab" data-tab="chat">Открыть «Для текстов»</button></div>` : ''}
-      </div>`;
-    }
-
-    html += `<div class="card list">`;
-    html += filtered.map(m => {
-      const chosen = (app.modelTab === 'chat' ? s.modelChat : s.modelVision) === m.id;
-      const price = m.variablePrice || m.promptPrice == null ? 'цена зависит от выбранной модели'
-        : m.free ? 'бесплатно'
-        : `$${(m.promptPrice * 1e6).toFixed(2)}/млн вход · $${(m.completionPrice * 1e6).toFixed(2)}/млн выход`;
-      return `<div class="it" data-act="pick-model" data-id="${esc(m.id)}">
-        ${chosen ? icon('check', 'ico s') : `<span class="dot unknown"></span>`}
-        <div class="grow"><div class="nm" style="font-size:14px">${esc(m.name)}${m.free ? ' <span style="color:var(--ok);font-weight:800">· бесплатно</span>' : ''}</div>
-          <div class="sm">${esc(m.id)}</div>
-          <div class="sm">${esc(price)}${m.ctx ? ` · ${Math.round(m.ctx / 1000)}k контекст` : ''}</div></div>
-        ${(m.inputs || []).includes('image') ? icon('eye', 'ico s') : ''}
-      </div>`;
-    }).join('');
-    html += `</div>`;
-    if (matched.length > filtered.length) {
-      html += `<button class="btn ghost sm" data-act="model-more" style="margin-bottom:12px">Показать ещё ${Math.min(25, matched.length - filtered.length)} из ${matched.length}</button>`;
-    }
-  }
-
-  // редкие действия — строками: карточка на каждое делала их громче ежедневного
-  const demoOn = S.state.docs.some(d => d.demo);
+  /* Выбор модели — это триста строк списка. Раньше он лежал прямо здесь, и
+     настройки превращались в свиток, в котором «удалить всё» и «пол» жили
+     через сотню моделей друг от друга. Теперь это отдельная комната. */
   html += `<div class="grp">
+    <div class="gi" data-act="go" data-r="models">${icon('eye', 'ico s')}<div class="t">Модель для снимков</div>
+      <div class="v">${s.modelVision ? esc(shortModel(s.modelVision)) : 'не выбрана'}</div>${chevron()}</div>
+    <div class="gi" data-act="go" data-r="models">${icon('chat', 'ico s')}<div class="t">Модель для текстов</div>
+      <div class="v">${s.modelChat ? esc(shortModel(s.modelChat)) : 'та же'}</div>${chevron()}</div>
     <div class="gi" data-act="reparse">${icon('recycle', 'ico s')}<div class="t">Переразобрать архив</div>
       <div class="v">${S.state.docs.filter(d => d.status === 'ready').length} док.</div>${chevron()}</div>
-    <div class="gi" data-act="${demoOn ? 'demo-clear' : 'demo-fill'}">${icon('sparkle', 'ico s')}
-      <div class="t">Демонстрационный архив</div><div class="v">${demoOn ? 'убрать' : 'показать'}</div>${chevron()}</div>
+    <div class="gi" data-act="${S.state.docs.some(d => d.demo) ? 'demo-clear' : 'demo-fill'}">${icon('sparkle', 'ico s')}
+      <div class="t">Демонстрационный архив</div><div class="v">${S.state.docs.some(d => d.demo) ? 'убрать' : 'показать'}</div>${chevron()}</div>
   </div>`;
 
   html += `<div class="cap">Профиль</div>
@@ -1579,6 +1619,96 @@ export function settingsView(app) {
   return html;
 }
 
+/* «google/gemini-2.5-flash» в строку настроек не влезает, а последнее слово
+   и есть то, что человек выбирал. */
+const shortModel = (id) => String(id).split('/').pop().replace(/:free$/, ' · бесплатно');
+
+/* ══ ВЫБОР МОДЕЛИ ════════════════════════════════════════════ */
+
+export function modelsView(app) {
+  const s = db.settings();
+  const models = app.models || db.cachedModels() || [];
+  const vision = models.filter(m => (m.inputs || []).includes('image'));
+  const q = (app.modelQuery || '').toLowerCase().trim();
+  const pool = app.modelTab === 'chat' ? models : vision;
+  const freeOnly = !!app.modelFree;
+  const shownLimit = app.modelLimit || 25;
+  const matched = pool
+    .filter(m => !freeOnly || m.free)
+    .filter(m => !q || m.id.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q)
+      || (/беспл|free/.test(q) && m.free));
+  const filtered = matched.slice(0, shownLimit);
+  const freeCount = pool.filter(m => m.free).length;
+
+  let html = backHeadWide('Модель', models.length ? `${models.length} моделей · ${vision.length} с картинками` : 'список не загружен');
+
+  html += `<div class="card">
+    <div class="kv"><span class="k">Снимки</span><span class="v" style="font-size:12.5px;font-weight:600">${s.modelVision ? esc(s.modelVision) : 'не выбрана'}</span></div>
+    <div class="kv"><span class="k">Тексты</span><span class="v" style="font-size:12.5px;font-weight:600">${s.modelChat ? esc(s.modelChat) : 'та же'}</span></div>
+    <div class="divide"></div>
+    <button class="mini" data-act="refresh-models">${app.modelsLoading ? 'Обновляю…' : 'Обновить список'}</button>
+  </div>`;
+
+  if (!models.length) {
+    html += `<div class="card"><div class="sm" style="line-height:1.55">Список моделей загружается по ключу OpenRouter. Вставь ключ в настройках и нажми «Обновить список».</div></div>`;
+    return html;
+  }
+
+  html += `<div class="segs">
+    <button class="seg ${app.modelTab !== 'chat' ? 'on' : ''}" data-act="model-tab" data-tab="vision">Для снимков</button>
+    <button class="seg ${app.modelTab === 'chat' ? 'on' : ''}" data-act="model-tab" data-tab="chat">Для текстов</button>
+  </div>
+  <div class="card" style="padding:12px 16px">
+    <input type="text" id="modelQuery" placeholder="поиск: gemini, gemma, claude…" value="${esc(app.modelQuery || '')}">
+    <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:8px">
+      <button class="chip ${!freeOnly ? 'on' : ''}" data-act="model-free" data-v="0">Все · ${pool.length}</button>
+      <button class="chip ${freeOnly ? 'on' : ''}" data-act="model-free" data-v="1">Бесплатные · ${freeCount}</button>
+    </div>
+    <div class="sm" style="margin-top:9px;line-height:1.45">${app.modelTab === 'chat'
+      ? `Любая модель из ${models.length}: этой достаются вопросы по архиву и тексты.`
+      : `Только те, что умеют читать картинки — ${pool.length} из ${models.length}. Текстовые модели (например gpt-oss) бланк не увидят.`}</div>
+  </div>`;
+
+  if (freeOnly) {
+    html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
+      <div class="grow sm" style="line-height:1.5">У бесплатных моделей свои ограничения: <b>примерно 50 запросов в сутки</b> и очередь в час пик. Бланки они читают заметно хуже платных — <b>обязательно сверь распознанные числа с оригиналом</b>. Для пробы годятся, для архива лучше платная.</div></div></div>`;
+  }
+
+  if (!filtered.length) {
+    const elsewhere = models.filter(m => !q || m.id.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q))
+      .filter(m => !freeOnly || m.free);
+    const blind = elsewhere.filter(m => !(m.inputs || []).includes('image'));
+    html += `<div class="card"><div class="sm" style="line-height:1.55">${
+      (app.modelTab !== 'chat' && blind.length)
+        ? `<b>${esc(blind[0].name)}</b> не умеет читать картинки — такие модели работают только с текстом. Она есть во вкладке <b>«Для текстов»</b>: там ей достанутся вопросы по архиву и формулировки, а бланки будет разбирать другая модель.`
+        : freeOnly
+          ? 'Среди умеющих читать картинки бесплатных сейчас нет. Сними фильтр или загляни во вкладку «Для текстов».'
+          : 'Ничего не нашлось. Попробуй другое слово или обнови список.'}</div>
+      ${(app.modelTab !== 'chat' && blind.length) ? `<div class="row" style="margin-top:11px"><button class="mini" data-act="model-tab" data-tab="chat">Открыть «Для текстов»</button></div>` : ''}
+    </div>`;
+  }
+
+  html += `<div class="card list">`;
+  html += filtered.map(m => {
+    const chosen = (app.modelTab === 'chat' ? s.modelChat : s.modelVision) === m.id;
+    const price = m.variablePrice || m.promptPrice == null ? 'цена зависит от выбранной модели'
+      : m.free ? 'бесплатно'
+      : `$${(m.promptPrice * 1e6).toFixed(2)}/млн вход · $${(m.completionPrice * 1e6).toFixed(2)}/млн выход`;
+    return `<div class="it" data-act="pick-model" data-id="${esc(m.id)}">
+      ${chosen ? icon('check', 'ico s') : `<span class="dot unknown"></span>`}
+      <div class="grow"><div class="nm" style="font-size:14px">${esc(m.name)}${m.free ? ' <span style="color:var(--ok);font-weight:800">· бесплатно</span>' : ''}</div>
+        <div class="sm">${esc(m.id)}</div>
+        <div class="sm">${esc(price)}${m.ctx ? ` · ${Math.round(m.ctx / 1000)}k контекст` : ''}</div></div>
+      ${(m.inputs || []).includes('image') ? icon('eye', 'ico s') : ''}
+    </div>`;
+  }).join('');
+  html += `</div>`;
+  if (matched.length > filtered.length) {
+    html += `<button class="btn ghost sm" data-act="model-more" style="margin-bottom:12px">Показать ещё ${Math.min(25, matched.length - filtered.length)} из ${matched.length}</button>`;
+  }
+  return html;
+}
+
 /* ══ ЗНАКОМСТВО ══════════════════════════════════════════════ */
 
 export function onboarding(app) {
@@ -1587,7 +1717,8 @@ export function onboarding(app) {
 
   if (step === 1) {
     const who = tgUserName();
-    return `<div class="head"><div class="grow"><h1>${who ? esc(who) + ', это BioLens' : 'BioLens'}</h1><div class="sub">шаг 1 из 3</div></div></div>
+    return `<div class="head"><div style="color:var(--ink)">${logoMark(34)}</div>
+      <div class="grow"><h1>${who ? esc(who) + ', это BioLens' : 'BioLens'}</h1><div class="sub">шаг 1 из 3</div></div></div>
     <div class="card"><div class="row">${icon('sparkle', 'ico s')}
       <div class="grow sm" style="color:var(--ink2);line-height:1.55">Кидай сюда скриншоты анализов — я сам прочитаю дату, лабораторию и показатели и сложу их <b style="color:var(--ink)">в линии по годам</b>.</div></div></div>
     <div class="card">
@@ -1642,14 +1773,15 @@ export function onboarding(app) {
 /* ══ ТАБ-БАР ═════════════════════════════════════════════════ */
 
 export function tabbar(active) {
-  /* Хроника ушла из дока: все файлы теперь лежат внизу главной, а ходить
-     за ними на отдельную вкладку было лишним шагом каждый день. Её место
-     заняло то, что нужно утром, днём и вечером. */
+  /* Три двери, а не пять. День, тело, разговор — этого хватает, чтобы описать
+     всё приложение. Лекарства, тарелка и хроника открываются с главной: они
+     нужны в свой момент, а не постоянно висят внизу экрана.
+
+     Подпись горит только у той двери, в которой ты стоишь, — панель остаётся
+     узкой пилюлей и не отнимает у содержимого целую строку. */
   const items = [
     ['summary', 'heartbeat', 'Здоровье'],
-    ['meds', 'pill', 'Лекарства'],
-    ['markers', 'chartline', 'Показатели'],
-    ['food', 'forkknife', 'Тарелка'],
+    ['markers', 'brain', 'Тело'],
     ['ask', 'chat', 'Спросить'],
   ];
   return `<div class="tabs"><div class="dock" id="dock">

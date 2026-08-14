@@ -3,6 +3,7 @@
 import * as db from './db.js';
 import * as S from './store.js';
 import * as MED from './meds.js';
+import * as SYS from './systems.js';
 import * as V from './views.js';
 import { $, $$, esc, toast, sheet, confirmSheet } from './ui.js';
 import { fetchModels, checkKey, summarize, askArchive, mealFeedback, chat, VOICE_RULES } from './openrouter.js';
@@ -15,7 +16,6 @@ const app = {
   route: 'summary',
   param: {},
   stack: [],
-  markerFilter: 'all',
   docFilter: 'all',
   modelTab: 'vision',
   modelQuery: '',
@@ -33,14 +33,15 @@ const app = {
   asking: false,
   obStep: 1,
   foodDate: null,
-  medSlot: null,      // выбранная часть дня в ленте приёма
+  medDate: null,      // выбранный день недели на экране лекарств
   archiveOpen: false, // архив на главной раскрыт целиком
 };
 window.__biolens = app;
 
-/* Хроника больше не вкладка: файлы лежат внизу главной, а сама хроника
-   открывается оттуда — значит, у неё должен быть путь назад. */
-const TABS = ['summary', 'meds', 'markers', 'food', 'ask'];
+/* Три двери внизу: день, тело, разговор. Лекарства, тарелка, хроника и
+   уведомления — это места, куда заходят в свой момент и возвращаются назад,
+   поэтому они лежат в стеке, а не в доке. */
+const TABS = ['summary', 'markers', 'ask'];
 
 /* ── рендер ──────────────────────────────────────────────────── */
 
@@ -53,6 +54,9 @@ function render() {
   if (!s.onboarded) html = V.onboarding(app);
   else if (app.route === 'summary') html = V.summary(app);
   else if (app.route === 'markers') html = V.markers(app);
+  else if (app.route === 'markers-all') html = V.markersAll(app);
+  else if (app.route === 'system') html = V.systemView(app);
+  else if (app.route === 'notices') html = V.noticesView(app);
   else if (app.route === 'marker') html = V.markerDetail(app);
   else if (app.route === 'timeline') html = V.timeline(app);
   else if (app.route === 'meds') html = V.medsView(app);
@@ -65,12 +69,13 @@ function render() {
   else if (app.route === 'due') html = V.due(app);
   else if (app.route === 'doctor') html = V.doctor(app);
   else if (app.route === 'settings') html = V.settingsView(app);
+  else if (app.route === 'models') html = V.modelsView(app);
 
   view.innerHTML = html;
   /* Подсвечиваем вкладку только там, где экран действительно ей принадлежит.
      Хроника, документ и «для врача» ничьи — гореть «Здоровью», пока ты не там,
      значит врать про своё же положение. */
-  const OWNER = { med: 'meds', marker: 'markers', meal: 'food' };
+  const OWNER = { marker: 'markers', system: 'markers', 'markers-all': 'markers' };
   $('#tabbar').innerHTML = s.onboarded ? V.tabbar(OWNER[app.route] || app.route) : '';
   // док пересобирается вместе с экраном — сжатое состояние надо вернуть на место
   if (dockMini) $('#dock')?.classList.add('mini');
@@ -211,6 +216,15 @@ async function handleAction(el) {
   switch (act) {
     case 'back': back(); break;
     case 'tab': go(el.dataset.tab); break;
+    /* Переход на экран, у которого нет своей вкладки: лекарства, тарелка,
+       хроника. Он ложится в стек, и «назад» возвращает туда, откуда пришли. */
+    case 'go': {
+      go(el.dataset.r);
+      if (el.dataset.r === 'models' && !app.models && !db.cachedModels()?.length && db.settings().apiKey) loadModels();
+      break;
+    }
+    case 'notices': go('notices'); break;
+    case 'system': go('system', { id: el.dataset.id }); break;
     case 'settings':
       go('settings');
       db.storageInfo().then(info => { if (info) { app.storage = info; if (app.route === 'settings') render(); } });
@@ -280,10 +294,17 @@ async function handleAction(el) {
       }
       break;
     }
-    case 'med-part': {
-      // выбор части дня не должен дёргать экран — остаёмся на том же месте
-      app.medSlot = el.dataset.slot;
+    case 'med-day': {
+      // переключение дня недели не должно дёргать экран
+      app.medDate = el.dataset.date;
       const pos = view.scrollTop; render(); $('#view').scrollTop = pos;
+      break;
+    }
+    case 'copy-missing': {
+      const s = SYS.systemById(el.dataset.id);
+      const have = new Set(S.markerList().map(m => m.key));
+      const txt = s.core.filter(k => !have.has(k)).map(k => SYS.markerTitle(k)).join(', ');
+      navigator.clipboard?.writeText(txt).then(() => toast('Список скопирован'), () => toast('Не смог скопировать'));
       break;
     }
     case 'archive-toggle': {
@@ -294,7 +315,6 @@ async function handleAction(el) {
     case 'med-new': medSheet(null); break;
     case 'med-edit': medSheet(el.dataset.id); break;
 
-    case 'filter': app.markerFilter = el.dataset.group; render(); break;
     case 'dfilter': app.docFilter = el.dataset.kind; render(); break;
 
     case 'add': pickFiles(); break;
