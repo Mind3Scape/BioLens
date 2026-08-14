@@ -42,7 +42,7 @@ function paperSvg(title, date, lab, rows) {
     <line x1="26" y1="${160 + i * 30}" x2="374" y2="${160 + i * 30}" stroke="#e6e6e8" stroke-dasharray="2 3"/>`).join('');
   /* Лист держим портретным, как настоящая бумага: в превью архива документ
      узнают по форме страницы, а альбомный обрубок ни на что не похож. */
-  const h = Math.max(566, 170 + rows.length * 30);
+  const h = Math.max(533, 170 + rows.length * 30);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="${h}" viewBox="0 0 400 ${h}">
     <rect width="400" height="${h}" fill="#fbfbf9"/>
     <text x="26" y="48" font-size="17" font-weight="700" fill="#15161b">${title}</text>

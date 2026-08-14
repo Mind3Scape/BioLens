@@ -364,8 +364,9 @@ html[data-theme="dark"] .tile .ph{background:#F2F2F0}
 /* Дней у курса бывает и пять, и четырнадцать — колонки делим по факту,
    а не по семь: половина пустого поля читалась как обрезанная сетка. */
 .daygrid{display:flex;gap:5px}
-.daycell{flex:1;min-width:0;height:34px;border-radius:9px;background:var(--field);display:flex;
-  align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:var(--ink4)}
+.daycell{flex:1;min-width:0;height:40px;border-radius:9px;background:var(--field);display:flex;
+  flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:11px;font-weight:700;color:var(--ink4)}
+.daycell em{font-style:normal;font-size:8.5px;font-weight:700;opacity:.65}
 .daycell.full{background:var(--ink);color:var(--surface)}
 .daycell.part{background:var(--hair2);color:var(--ink2)}
 
@@ -441,11 +442,16 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
 .cov i.on{background:var(--ink)}
 .cov i.gap{margin-left:7px}
 .syst{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
-.sysc{background:var(--surface);border-radius:var(--r);padding:12px;box-shadow:var(--shadow);border:none;
+.sysc{background:var(--surface);background:color-mix(in srgb, var(--stint) 7%, var(--surface));
+  border-radius:var(--r);padding:12px;box-shadow:var(--shadow);border:none;
   font-family:inherit;text-align:left;color:var(--ink);cursor:pointer;display:block;
   animation:tin .3s cubic-bezier(.22,1,.36,1) both}
 .sysc:active{transform:scale(0.98)}
-.sysh{display:flex;align-items:center;justify-content:space-between;min-height:20px;color:var(--stint,var(--ink3))}
+.sysh{display:flex;align-items:center;justify-content:space-between;min-height:28px}
+/* Значок системы сидит в кружке своей краски — карточка перестаёт быть
+   белым прямоугольником с точкой в углу. */
+.sysi{width:28px;height:28px;min-width:28px;border-radius:99px;display:flex;align-items:center;justify-content:center;
+  color:var(--stint,var(--ink3));background:color-mix(in srgb, var(--stint) 15%, transparent)}
 .sysb{font-size:10px;font-weight:800;padding:3px 7px;border-radius:99px;display:inline-flex;align-items:center;
   background:var(--field);color:var(--ink3)}
 .sysb .ico{width:11px;height:11px}
@@ -458,8 +464,11 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
 .sysd i.on{background:var(--stint,var(--ink))}
 .sysd.big i{height:7px;max-width:46px;border-radius:3px}
 .syss{font-size:10.5px;color:var(--ink3);margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* «Не хватает 3 из 5» — не подпись, а сообщение: держим его в полную силу */
+.syss.gap{color:var(--ink2);font-weight:650}
 /* Система без единого анализа — пунктиром: это не «здоров», это «не смотрели» */
 .sysc.s-blank{background:none;box-shadow:none;border:1px dashed var(--hair2)}
+.sysc.s-blank .sysi{background:none;box-shadow:inset 0 0 0 1px var(--hair2)}
 .sysc.s-blank .sysn{color:var(--ink2)}
 .tint-wine{--stint:var(--s-wine)} .tint-indigo{--stint:var(--s-indigo)} .tint-amber{--stint:var(--s-amber)}
 .tint-moss{--stint:var(--s-moss)} .tint-cyan{--stint:var(--s-cyan)} .tint-violet{--stint:var(--s-violet)}
@@ -543,3 +552,47 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
 @media (prefers-reduced-motion:reduce){
   *{animation:none !important;transition:none !important}
 }
+
+/* ── дуга изученности ────────────────────────────────────────────
+   Шкала прибора: сразу видно, что стрелка едва сдвинулась. Ряд одинаковых
+   клеточек говорил то же число, но читался как узор на обоях. */
+.gg{position:relative;width:88px;min-width:88px;display:flex;align-items:flex-end;justify-content:center}
+.gg b{position:absolute;bottom:-2px;font-size:19px;font-weight:800;letter-spacing:-0.8px}
+.gg b span{font-size:11px;font-weight:700;color:var(--ink3);margin-left:1px}
+.nico.teal{background:var(--teal-soft);color:var(--teal)}
+.gapc .sysi{margin-right:2px}
+
+/* ── день одной лентой (главная) ─────────────────────────────────
+   Тот же день, что на экране лекарств, но горизонтально: точки стоят на своих
+   часах, тёмная часть полосы — сколько дня уже прошло, засечка — «сейчас».
+   Весь день одним взглядом; подробности — этажом ниже, на своём экране. */
+.dstrip{position:relative;height:52px;margin:16px 2px 2px}
+.dl{position:absolute;left:0;right:0;top:9px;height:3px;border-radius:99px;background:var(--hair);display:block}
+.dl.on{right:auto;background:var(--hair2)}
+.dcur{position:absolute;top:3px;width:2px;height:15px;border-radius:99px;background:var(--ink);
+  transform:translateX(-1px);box-shadow:0 0 0 3px var(--surface)}
+.dn{position:absolute;top:0;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:6px}
+.dn i{width:21px;height:21px;border-radius:99px;background:var(--surface);display:flex;align-items:center;
+  justify-content:center;box-shadow:inset 0 0 0 2px var(--hair2)}
+.dn i .ico{width:12px;height:12px}
+.dn i b{font-size:11px;font-weight:800;color:var(--ink)}
+.dn em{font-style:normal;font-size:9.5px;font-weight:650;color:var(--ink4);white-space:nowrap}
+.dn.done i{background:var(--ink);box-shadow:none;color:var(--surface)}
+.dn.miss i{box-shadow:inset 0 0 0 2px var(--edge-dot)}
+.dn.miss i b{color:var(--edge)}
+.dn.nil i{width:13px;height:13px;margin:4px 0;box-shadow:inset 0 0 0 2px var(--hair)}
+.dn.sel em{color:var(--ink);font-weight:750}
+
+/* Час отметки: день становится записью, а не списком галочек */
+.tmk{font-size:11px;font-weight:700;color:var(--ink4);font-variant-numeric:tabular-nums}
+.med-row.done .tmk{color:var(--ink3)}
+
+/* Черта «сейчас» в вертикальном таймлайне — как в календаре */
+.tlnow{display:grid;grid-template-columns:36px 18px 1fr;align-items:center;margin:-4px 0 8px}
+.tlnow b{font-size:10px;font-weight:800;color:var(--ink);text-align:right;padding-right:4px}
+.tlnow span{width:7px;height:7px;border-radius:99px;background:var(--ink);margin-left:2.5px}
+.tlnow i{height:1.5px;border-radius:99px;background:var(--ink);opacity:.28;display:block;margin-left:6px}
+
+/* Отметка приёма отзывается: галочка появляется толчком, а не мигает */
+.tick.on .ico{animation:pop .32s cubic-bezier(.34,1.56,.64,1) both}
+@keyframes pop{from{transform:scale(.3);opacity:0}to{transform:none;opacity:1}}

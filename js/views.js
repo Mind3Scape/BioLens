@@ -5,7 +5,7 @@ import * as S from './store.js';
 import * as db from './db.js';
 import * as MED from './meds.js';
 import { icon } from './icons.js';
-import { esc, sparkline, chart, statusDot, statusTag, statusWord, toneVar, inkTone, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale } from './ui.js';
+import { esc, sparkline, chart, statusDot, statusTag, statusWord, toneVar, inkTone, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale, gauge } from './ui.js';
 import { markerTitle, markerGroup, MARKERS } from './markers.js';
 import { info } from './reference.js';
 import { tgUserName, tgUser, inTelegram } from './telegram.js';
@@ -44,6 +44,10 @@ const chevron = () => `<svg class="chev" viewBox="0 0 24 24"><polyline points="9
 
 const avatarBtn = `<button class="rnd" data-act="settings">${icon('user', 'ico s')}</button>`;
 const addBtn = `<button class="rnd dark" data-act="add">${icon('plus', 'ico s')}</button>`;
+/* На главной «плюс» добавляет ЧТО УГОДНО: бланк, файл или тарелку.
+   Раньше он молча означал «документ», и снять еду можно было, только
+   догадавшись зайти на её экран. */
+const addAnyBtn = `<button class="rnd dark" data-act="add-any">${icon('plus', 'ico s')}</button>`;
 /* Колокольчик. Всё, что ждёт человека — деньги на счету, непрочитанные бланки,
    непроверенные назначения, — живёт здесь, а не поперёк главной. */
 const bellBtn = (n) => `<button class="rnd" data-act="notices" aria-label="Уведомления">${icon('bell', 'ico s')}${n ? `<i class="bdot">${n > 9 ? '9' : n}</i>` : ''}</button>`;
@@ -71,7 +75,7 @@ export function summary(app) {
   }
 
   const nn = notices(app).length;
-  let html = head('Здоровье', dayTitle(today), bellBtn(nn) + avatarBtn + addBtn);
+  let html = head('Здоровье', dayTitle(today), bellBtn(nn) + avatarBtn + addAnyBtn);
 
   /* Разбор идёт прямо сейчас — это не предупреждение, а работа на глазах.
      Одна тонкая строка, а не карточка во всю высоту. */
@@ -85,10 +89,15 @@ export function summary(app) {
   }
 
   html += tileGrid(app);
-  html += nextTake(app, today);
+  html += todayBlock(app, today);
   html += archive(app);
 
+  /* Тарелка — постоянной строкой, даже когда сегодня пусто. Плитка про еду
+     появляется, только когда есть что сказать, и вход в неё пропадал совсем. */
+  const ft = S.dayTotals(today);
   html += `<div class="grp">
+    <div class="gi" data-act="go" data-r="food">${icon('forkknife', 'ico s')}<div class="t">Тарелка</div>
+      <div class="v">${ft.count ? `${Math.round(ft.kcal)} ккал` : 'сегодня пусто'}</div>${chevron()}</div>
     <div class="gi" data-act="doctor">${icon('stethoscope', 'ico s')}<div class="t">Страница для врача</div>${chevron()}</div>
   </div>`;
 
@@ -133,37 +142,70 @@ function tileEl(t, i) {
   </button>`;
 }
 
-/* ── ближайший приём на главной ──────────────────────────────────
-   Не весь день, а только то, что нужно сделать прямо сейчас: часть дня,
-   её таблетки и кружки-отметки. Весь день целиком живёт на своём экране —
-   главная не должна быть его копией. */
-function nextTake(app, date) {
+/* ── день на главной ─────────────────────────────────────────────
+   Тот же день, что и на экране лекарств, но другим ракурсом: горизонтальная
+   лента, где точки стоят на СВОИХ часах, а тонкая метка показывает, сколько
+   дня уже прошло. Весь день одним взглядом — а подробности этажом ниже,
+   на своём экране. */
+
+/* Ось ленты: от шести утра до полуночи. Всё раньше шести прижимается к началу —
+   в этих часах приёмов не бывает, а растягивать ради них ленту значит сжать
+   остальной день. */
+const AX_FROM = 6 * 60, AX_TO = 24 * 60;
+const axPos = (min) => Math.max(6, Math.min(94, ((min - AX_FROM) / (AX_TO - AX_FROM)) * 100));
+const minutesOf = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+const nowMinutes = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
+const hhmm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+function todayBlock(app, date) {
   if (!MED.state.meds.length) {
     return `<div class="grp"><div class="gi" data-act="add">${icon('pill', 'ico s')}
       <div class="t">Сфотографируй назначение врача</div>
       <div class="v">разложу по дню</div>${chevron()}</div></div>`;
   }
+  const d = MED.dayCount(date);
+  if (!d.total) return '';
+
+  const plan = MED.planFor(date);
+  const byId = Object.fromEntries(plan.map(s => [s.id, s]));
+  const now = nowMinutes();
+  const nowPos = axPos(now);
   const slot = MED.nowSlot(date);
   const pending = slot ? slot.items.filter(i => !i.taken && !i.skipped) : [];
-  if (!slot || !pending.length) return '';
 
-  // приём мог остаться неотмеченным с утра — тогда честнее сказать это вслух
-  const late = MED.SLOTS.findIndex(s => s.id === slot.id) < MED.SLOTS.findIndex(s => s.id === MED.currentSlot());
-  return `<div class="cap">Сейчас</div>
+  const nodes = MED.SLOTS.map(s => {
+    const cur = byId[s.id];
+    const total = cur ? cur.items.length : 0;
+    const taken = cur ? cur.items.filter(i => i.taken).length : 0;
+    const state = !total ? 'nil' : taken === total ? 'done' : now > minutesOf(s.at) + 60 ? 'miss' : 'todo';
+    const left = axPos(minutesOf(s.at));
+    return `<span class="dn ${state}${slot && slot.id === s.id ? ' sel' : ''}" style="left:${left.toFixed(1)}%">
+      <i>${state === 'done' ? icon('check', 'ico s') : total ? `<b>${total - taken}</b>` : ''}</i>
+      <em>${s.title.toLowerCase()}</em></span>`;
+  }).join('');
+
+  return `<div class="cap">Сегодня</div>
   <div class="card">
-    <div class="row tap" data-act="go" data-r="meds" style="margin-bottom:2px">
-      <div class="grow"><div class="nm" style="font-size:13px;font-weight:750">${slot.title} · ${slot.at}</div>
-        <div class="sm">${late ? 'осталось неотмеченным' : `${pending.length} ${plural(pending.length, 'приём', 'приёма', 'приёмов')}`} · весь день</div></div>
-      ${chevron()}
+    <div class="row tap" data-act="go" data-r="meds" style="align-items:baseline">
+      <div class="grow"><div class="nm" style="font-size:13px;font-weight:750">${
+        d.left ? `Осталось ${d.left} ${plural(d.left, 'приём', 'приёма', 'приёмов')}` : 'Сегодня всё принято'}</div></div>
+      <div class="sm">${d.taken} из ${d.total}</div>${chevron()}
     </div>
-    ${slot.items.slice(0, 4).map(i => medRow(i, slot.id, date)).join('')}
-    ${slot.items.length > 4 ? `<div class="sm" style="padding-top:9px">и ещё ${slot.items.length - 4} в этой части дня</div>` : ''}
+    <div class="dstrip">
+      <i class="dl"></i><i class="dl on" style="width:${nowPos.toFixed(1)}%"></i>
+      <i class="dcur" style="left:${nowPos.toFixed(1)}%"></i>
+      ${nodes}
+    </div>
+    ${pending.length ? `<div class="divide"></div>
+      <div class="sm" style="margin-bottom:2px">${slot.title} · ${slot.at}</div>
+      ${slot.items.slice(0, 4).map(i => medRow(i, slot.id, date)).join('')}
+      ${slot.items.length > 4 ? `<div class="sm" style="padding-top:9px">и ещё ${slot.items.length - 4} в этой части дня</div>` : ''}` : ''}
   </div>`;
 }
 
-
-/* Строка приёма: отметка слева, лекарство посередине. Стрелка здесь лишняя —
-   вся строка и так открывается, а знак «открывается» спорил бы с кружком. */
+/* Строка приёма: отметка слева, лекарство посередине, час отметки справа.
+   Стрелка здесь лишняя — вся строка и так открывается, а знак «открывается»
+   спорил бы с кружком. */
 function medRow(item, slotId, date, { lock = false } = {}) {
   const m = item.med;
   const p = MED.progressOf(m, date);
@@ -178,12 +220,16 @@ function medRow(item, slotId, date, { lock = false } = {}) {
     ? `<span class="tick lock" aria-hidden="true"></span>`
     : `<button class="tick${item.taken ? ' on' : ''}" data-act="take" data-id="${esc(m.id)}" data-slot="${esc(slotId)}" data-date="${esc(date)}"
         aria-label="${item.taken ? 'Отменить отметку' : 'Отметить приём'}">${icon('check', 'ico s')}</button>`;
+  /* Час отметки справа: день превращается из списка галочек в запись —
+     «принял в 08:42». Это же отвечает на вопрос «я точно пил утром?». */
+  const when = item.taken && item.at ? `<div class="tmk">${hhmm(new Date(item.at))}</div>` : '';
   return `<div class="med-row${item.taken ? ' done' : ''}" data-act="med" data-id="${esc(m.id)}">
     ${mark}
     <div class="grow">
       <div class="nm">${esc(m.name)}</div>
       <div class="sm">${sub || 'доза не указана — допиши'}</div>
     </div>
+    ${when}
   </div>`;
 }
 
@@ -274,22 +320,26 @@ export function markers(app) {
 
   let html = head('Тело', `${list.length} ${plural(list.length, 'показатель', 'показателя', 'показателей')} · ${cov.systemsTouched} ${plural(cov.systemsTouched, 'система', 'системы', 'систем')} из ${cov.systemsTotal}`, avatarBtn + addBtn);
 
-  /* Одна полоса вместо абзаца: сколько базовых анализов вообще когда-либо
-     сдавалось. Это и есть ответ на «что у меня изучено, а что нет». */
+  /* Герой экрана отвечает на вопрос, ради которого сюда заходят: что я знаю
+     о себе и чего не знаю. Дуга — как шкала прибора: видно, что стрелка едва
+     сдвинулась. Ряд клеточек, стоявший тут раньше, показывал то же число,
+     но читался как узор на обоях. */
+  const gapsCount = sys.reduce((n, x) => n + x.missing.length, 0);
   html += `<div class="card">
-    <div class="row" style="align-items:baseline">
-      <div class="grow"><div class="nm" style="font-size:13px;font-weight:750">Изучено</div></div>
-      <div class="sm"><b style="color:var(--ink)">${cov.known}</b> из ${cov.total} базовых анализов</div>
+    <div class="row" style="gap:14px;align-items:center">
+      <div class="gg">${gauge(cov.pct, { size: 88, stroke: 9 })}<b>${Math.round(cov.pct * 100)}<span>%</span></b></div>
+      <div class="grow">
+        <div class="nm" style="font-size:15px;font-weight:760">Что я знаю о теле</div>
+        <div class="sm" style="margin-top:3px">Сдано <b style="color:var(--ink)">${cov.known}</b> из ${cov.total} базовых анализов${cov.blank.length ? `, ${cov.blank.length} ${plural(cov.blank.length, 'система', 'системы', 'систем')} не тронуто вовсе` : ''}</div>
+      </div>
     </div>
-    <div class="cov">${(() => {
-      /* Каждая клетка — один базовый анализ. Закрашена — сдавался хоть раз.
-         Пробел между группами клеток — граница системы. Это буквальный ответ
-         на вопрос «сколько изучено», без процентов и без пересказа. */
-      const have = new Set(list.map(m => m.key));
-      return SYSTEMS.map((sd, si) => sd.core.map((k, i) =>
-        `<i class="${have.has(k) ? 'on' : ''}${i === 0 && si ? ' gap' : ''}" title="${esc(sd.title)}"></i>`).join('')).join('');
-    })()}</div>
-    ${cov.blank.length ? `<div class="sm" style="margin-top:8px">Ни одного анализа: ${cov.blank.map(s => esc(s.title.toLowerCase())).join(', ')}</div>` : ''}
+    ${gapsCount ? `<div class="divide"></div>
+      <div class="row tap" data-act="go" data-r="gaps">
+        <span class="nico teal">${icon('target', 'ico s')}</span>
+        <div class="grow"><div class="nm" style="font-size:14px">Что доисследовать</div>
+          <div class="sm">${gapsCount} ${plural(gapsCount, 'анализ', 'анализа', 'анализов')}, которых я не видел ни в одном бланке</div></div>
+        ${chevron()}
+      </div>` : ''}
   </div>`;
 
   html += `<div class="syst">${sys.map(sysCard).join('')}</div>`;
@@ -308,21 +358,67 @@ export function markers(app) {
   return html;
 }
 
-/* Карточка системы: значок, состояние, и точки — сколько базовых анализов
-   этой системы вообще сдавалось. Полая точка означает «не смотрели». */
+/* Карточка системы. Заливка — своим цветом системы (он ничего не говорит о
+   здоровье, это просто её краска), точки — сколько базовых анализов сдано,
+   и главное: прямо написано, чего не хватает. Раньше карточка сообщала
+   «1 показатель · 18.07» — и человек не мог понять, много это или мало. */
 function sysCard(s) {
+  const gap = s.missing.length;
+  /* Зелёная галочка ставится, ТОЛЬКО когда базовый набор сдан целиком.
+     Иначе «всё хорошо» стояло рядом с «не хватает 4 из 5» — и означало
+     всего лишь «то единственное, что я видел, в норме». */
   const badge = s.out ? `<span class="sysb out">${s.out}</span>`
     : s.edge ? `<span class="sysb edge">${s.edge}</span>`
-    : s.state === 'ok' ? `<span class="sysb ok">${icon('check', 'ico s')}</span>` : '';
-  const sub = !s.markers.length ? 'ни одного анализа'
+    : (s.state === 'ok' && !gap) ? `<span class="sysb ok">${icon('check', 'ico s')}</span>` : '';
+  const sub = !s.markers.length
+    ? `нет ни одного из ${s.coreTotal}`
     : s.state === 'stale' ? `последний раз ${S.ruShort(s.lastDate)}`
-    : `${s.markers.length} ${plural(s.markers.length, 'показатель', 'показателя', 'показателей')} · ${S.ruShort(s.lastDate)}`;
+    : gap ? `не хватает ${gap} из ${s.coreTotal}` : `всё сдано · ${S.ruShort(s.lastDate)}`;
   return `<button class="sysc s-${s.state} tint-${s.tint}" data-act="system" data-id="${esc(s.id)}">
-    <div class="sysh">${icon(s.icon, 'ico s')}${badge}</div>
+    <div class="sysh"><span class="sysi">${icon(s.icon, 'ico s')}</span>${badge}</div>
     <div class="sysn">${esc(s.title)}</div>
     <div class="sysd">${s.core.map((k, i) => `<i class="${i < s.coreHave ? 'on' : ''}"></i>`).join('')}</div>
-    <div class="syss">${esc(sub)}</div>
+    <div class="syss${gap ? ' gap' : ''}">${esc(sub)}</div>
   </button>`;
+}
+
+/* ── что доисследовать ───────────────────────────────────────────
+   Экран отвечает ровно на один вопрос — «чего я про себя не знаю». Не
+   назначение и не список покупок: повод спросить врача, что из этого нужно
+   именно тебе. Поэтому здесь есть кнопка «скопировать», а не «заказать». */
+
+export function gapsView(app) {
+  const list = S.markerList();
+  const sys = mapSystems(list).filter(s => s.missing.length);
+  const total = sys.reduce((n, s) => n + s.missing.length, 0);
+  const cov = coverage(list);
+
+  let html = backHeadWide('Что доисследовать', `${total} ${plural(total, 'анализ', 'анализа', 'анализов')} · сдано ${cov.known} из ${cov.total}`);
+
+  if (!total) {
+    return html + emptyBlock('check', 'Белых пятен нет',
+      'Базовый набор по всем системам у тебя сдан. Дальше дело не в новых анализах, а в том, чтобы вовремя пересдавать уже знакомые.',
+      `<button class="btn ghost" data-act="due">Что пора пересдать</button>`);
+  }
+
+  html += `<div class="card flat"><div class="row" style="align-items:flex-start">${icon('eye', 'ico s')}
+    <div class="grow sm" style="line-height:1.55">Это обычный базовый набор для каждой системы, а не назначение. Я вижу только то, что попало в бланки: если анализ сдавался на бумаге и в приложение не попал — для меня его нет.</div></div></div>`;
+
+  for (const s of sys) {
+    html += `<div class="card gapc tint-${s.tint}">
+      <div class="row tap" data-act="system" data-id="${esc(s.id)}">
+        <span class="sysi">${icon(s.icon, 'ico s')}</span>
+        <div class="grow"><div class="nm">${esc(s.title)}</div>
+          <div class="sm">${s.markers.length ? `сдано ${s.coreHave} из ${s.coreTotal}` : 'система не тронута вовсе'} · ${esc(s.about)}</div></div>
+        ${chevron()}
+      </div>
+      <div class="chips" style="margin-top:11px">${s.missingTitles.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div>
+    </div>`;
+  }
+
+  html += `<button class="btn" data-act="copy-gaps">Скопировать весь список</button>`;
+  html += `<div class="disc">Список удобно показать врачу или отдать в лабораторию. Что именно сдавать и как часто — решает врач, а не приложение.</div>`;
+  return html;
 }
 
 /* ── одна система ────────────────────────────────────────────── */
@@ -955,7 +1051,9 @@ export function inbox(app) {
     }[d.status];
     html += `<div class="card">
       <div class="row">
-        <div class="thumb" style="width:44px;aspect-ratio:3/4"><img data-blob="${esc(d.blobId)}" alt=""></div>
+        ${d.blobId
+          ? `<div class="thumb" style="width:44px;aspect-ratio:3/4"><img data-blob="${esc(d.blobId)}" alt=""></div>`
+          : `<span class="nico">${icon(docIcon(d.type, d.isPdf), 'ico s')}</span>`}
         <div class="grow"><div class="nm">${esc(kind[0])}</div><div class="sm">${esc(d.fileName || d.title || '')}${kind[1] ? ' · ' + esc(kind[1]) : ''}</div></div>
         <button class="mini" data-act="doc" data-id="${esc(d.id)}">Открыть</button>
       </div>
@@ -1110,6 +1208,10 @@ function dayTimeline(app, date, today) {
   const isToday = date === today;
   const future = date > today;
 
+  const now = nowMinutes();
+  const nowRow = `<div class="tlnow"><b>${hhmm(new Date())}</b><span></span><i></i></div>`;
+  let nowPlaced = !isToday;
+
   return `<div class="tl">${MED.SLOTS.map((s, i) => {
     const cur = byId[s.id];
     const items = cur ? cur.items : [];
@@ -1127,7 +1229,11 @@ function dayTimeline(app, date, today) {
       : state === 'done' ? 'принято'
       : state === 'miss' ? `не отмечено ${items.length - taken}`
       : `${items.length - taken} из ${items.length}`;
-    return `<div class="tls ${state}${isNow ? ' at' : ''}">
+    /* Настоящее время идёт между частями дня — как черта «сейчас» в календаре.
+       Без неё утро и вечер стоят в вакууме: непонятно, где ты в этом дне. */
+    let before = '';
+    if (!nowPlaced && now < minutesOf(s.at)) { before = nowRow; nowPlaced = true; }
+    return before + `<div class="tls ${state}${isNow ? ' at' : ''}">
       <div class="tlt">${s.at}</div>
       <div class="tlx"><i></i></div>
       <div class="tlc">
@@ -1135,7 +1241,7 @@ function dayTimeline(app, date, today) {
         ${items.map(x => medRow(x, s.id, date, { lock: future })).join('')}
       </div>
     </div>`;
-  }).join('')}</div>`;
+  }).join('')}${nowPlaced ? '' : nowRow}</div>`;
 }
 
 /* Карточка курса: что это, когда принимать и как шла неделя.
@@ -1191,7 +1297,7 @@ export function medDetail(app) {
      Начало и окончание — одной строкой: это один отрезок, а не два факта. */
   html += `<div class="card">
     <div class="hero" style="align-items:baseline">
-      <div class="big" style="font-size:34px">${p.total ? `${Math.max(1, Math.min(p.day, p.total))}<span style="font-size:16px;font-weight:650;color:var(--ink3);margin-left:6px">из ${p.total}</span>` : '—'}</div>
+      <div class="big" style="font-size:34px">${p.total ? `${Math.max(1, Math.min(p.day, p.total))}<span style="font-size:16px;font-weight:650;color:var(--ink3);margin-left:9px;letter-spacing:0">из ${p.total}</span>` : '—'}</div>
       <div class="grow sm" style="text-align:right">${p.total ? 'день курса' : stWord}</div>
     </div>
     ${p.total ? `<div class="prog" style="margin-top:10px"><i style="width:${Math.max(2, Math.min(100, Math.round((p.day / p.total) * 100)))}%"></i></div>` : ''}
@@ -1226,7 +1332,9 @@ export function medDetail(app) {
     html += `<div class="cap">Как шло</div><div class="card">
       <div class="daygrid">${days.map(d => {
         const cls = d.marks.every(x => x === 'taken') ? 'full' : d.some ? 'part' : 'none';
-        return `<div class="daycell ${cls}" title="${d.date}"><span>${+d.date.slice(8, 10)}</span></div>`;
+        const [y, mo, dd] = d.date.split('-').map(Number);
+        const wd = WD[(new Date(y, mo - 1, dd).getDay() + 6) % 7];
+        return `<div class="daycell ${cls}" title="${d.date}"><em>${wd}</em><span>${dd}</span></div>`;
       }).join('')}</div>
       ${adh && adh.planned ? `<div class="sm" style="margin-top:11px">Отмечено ${adh.taken} из ${adh.planned} приёмов за ${adh.days} ${plural(adh.days, 'день', 'дня', 'дней')}. Считаются только отмеченные — если принял и забыл отметить, я об этом не знаю.</div>` : ''}
     </div>`;
@@ -1295,7 +1403,7 @@ export function food(app) {
      не помещалась и разрывала «2 приёма» пополам. */
   html += `<div class="card">
     <div class="row">
-      ${ring(t.kcal / tg.kcal, { size: 52 })}
+      ${ring(t.kcal / tg.kcal, { size: 52, color: 'var(--teal)' })}
       <div class="grow"><div class="nm" style="font-size:17px">${Math.round(t.kcal)} ккал <span class="unit">из ${tg.kcal}</span></div>
         <div class="sm">Б ${Math.round(t.protein_g)} · Ж ${Math.round(t.fat_g)} · У ${Math.round(t.carbs_g)} · ${t.count} ${plural(t.count, 'приём', 'приёма', 'приёмов')}</div></div>
     </div>
@@ -1402,15 +1510,23 @@ export function ask(app) {
 
 export function due(app) {
   const list = S.dueList();
-  let html = backHead('Что пересдать', `${list.length} показателей ждут очереди`);
+  let html = backHead('Что пересдать', `${list.length} ${plural(list.length, 'показатель ждёт', 'показателя ждут', 'показателей ждут')} очереди`);
   if (!list.length) return html + emptyBlock('check', 'Всё свежее', 'Ни один показатель не просрочен.');
-  html += `<div class="card list">${list.map(m => `
-    <div class="it" data-act="marker" data-key="${esc(m.key)}">
+  /* Справа — сколько месяцев прошло с последнего замера. Раньше там стояло
+     «на сколько просрочен», и то же самое на главной считалось от даты
+     замера: два разных числа про одно и то же. */
+  html += `<div class="card list">${list.map(m => {
+    const months = Math.max(1, Math.floor(m.daysOld / 30));
+    return `<div class="it" data-act="marker" data-key="${esc(m.key)}">
       ${statusDot(m.stale ? 'unknown' : m.status)}
       <div class="grow"><div class="nm">${esc(m.title)}</div>
-        <div class="sm">${esc(S.ruStatus(m.status))} · последний раз ${S.ruDate(m.last.date)} · обычно раз в ${m.every === 180 ? 'полгода' : m.every === 270 ? '9 месяцев' : 'год'}</div></div>
-      <div class="delta down">${Math.floor(m.overdue / 30)} мес.</div>
-    </div>`).join('')}</div>`;
+        <div class="sm">${esc(S.ruStatus(m.status))} · ${S.ruDate(m.last.date)} · обычно раз в ${m.every === 180 ? 'полгода' : m.every === 270 ? '9 месяцев' : 'год'}</div></div>
+      <div style="text-align:right;min-width:52px">
+        <div class="val">${months}</div>
+        <div class="unit" style="display:block;margin:1px 0 0">мес. назад</div>
+      </div>
+    </div>`;
+  }).join('')}</div>`;
   html += `<button class="btn ghost" data-act="copy-due">Скопировать список для лаборатории</button>`;
   html += `<div class="disc">Сроки — простое правило, а не назначение: раз в год, чаще для того, что вышло за границу.</div>`;
   return html;
@@ -1781,7 +1897,7 @@ export function tabbar(active) {
      узкой пилюлей и не отнимает у содержимого целую строку. */
   const items = [
     ['summary', 'heartbeat', 'Здоровье'],
-    ['markers', 'brain', 'Тело'],
+    ['markers', 'body', 'Тело'],
     ['ask', 'chat', 'Спросить'],
   ];
   return `<div class="tabs"><div class="dock" id="dock">

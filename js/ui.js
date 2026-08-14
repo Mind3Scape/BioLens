@@ -357,6 +357,24 @@ export function gradeScale(value, grades) {
   </div>`;
 }
 
+
+/* Дуга-полукольцо: доля одним взглядом.
+   Кольцо целиком читается как «сколько сделано из задуманного», а полукруг —
+   как шкала прибора: сразу видно, что стрелка стоит в начале пути. */
+export function gauge(pct, { size = 96, stroke = 10 } = {}) {
+  const v = Math.max(0, Math.min(1, Number(pct) || 0));
+  const r = (size - stroke) / 2;
+  const cy = size / 2;
+  const d = `M${(stroke / 2).toFixed(1)},${cy} A${r},${r} 0 0 1 ${(size - stroke / 2).toFixed(1)},${cy}`;
+  const len = Math.PI * r;
+  return `<svg width="${size}" height="${(cy + stroke / 2).toFixed(1)}" viewBox="0 0 ${size} ${(cy + stroke / 2).toFixed(1)}" style="display:block">
+    <path d="${d}" fill="none" stroke="var(--hair2)" stroke-width="${stroke}" stroke-linecap="round"/>
+    <path d="${d}" fill="none" stroke="var(--ink)" stroke-width="${stroke}" stroke-linecap="round"
+      stroke-dasharray="${len.toFixed(1)}" stroke-dashoffset="${(len * (1 - v)).toFixed(1)}"
+      style="transition:stroke-dashoffset .6s cubic-bezier(.22,1,.36,1)"/>
+  </svg>`;
+}
+
 export function bar(value, target, { color = 'var(--ink)' } = {}) {
   const pct = Math.max(0, Math.min(1.35, target ? value / target : 0));
   const over = pct > 1;

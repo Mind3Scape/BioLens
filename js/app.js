@@ -6,6 +6,7 @@ import * as MED from './meds.js';
 import * as SYS from './systems.js';
 import * as V from './views.js';
 import { $, $$, esc, toast, sheet, confirmSheet } from './ui.js';
+import { icon } from './icons.js';
 import { fetchModels, checkKey, summarize, askArchive, mealFeedback, chat, VOICE_RULES } from './openrouter.js';
 import { scan } from './scan.js';
 import { fillDemo, clearDemo, hasDemo } from './demo.js';
@@ -56,6 +57,7 @@ function render() {
   else if (app.route === 'markers') html = V.markers(app);
   else if (app.route === 'markers-all') html = V.markersAll(app);
   else if (app.route === 'system') html = V.systemView(app);
+  else if (app.route === 'gaps') html = V.gapsView(app);
   else if (app.route === 'notices') html = V.noticesView(app);
   else if (app.route === 'marker') html = V.markerDetail(app);
   else if (app.route === 'timeline') html = V.timeline(app);
@@ -75,7 +77,7 @@ function render() {
   /* Подсвечиваем вкладку только там, где экран действительно ей принадлежит.
      Хроника, документ и «для врача» ничьи — гореть «Здоровью», пока ты не там,
      значит врать про своё же положение. */
-  const OWNER = { marker: 'markers', system: 'markers', 'markers-all': 'markers' };
+  const OWNER = { marker: 'markers', system: 'markers', 'markers-all': 'markers', gaps: 'markers' };
   $('#tabbar').innerHTML = s.onboarded ? V.tabbar(OWNER[app.route] || app.route) : '';
   // док пересобирается вместе с экраном — сжатое состояние надо вернуть на место
   if (dockMini) $('#dock')?.classList.add('mini');
@@ -300,6 +302,13 @@ async function handleAction(el) {
       const pos = view.scrollTop; render(); $('#view').scrollTop = pos;
       break;
     }
+    case 'copy-gaps': {
+      const have = new Set(S.markerList().map(m => m.key));
+      const lines = SYS.mapSystems(S.markerList()).filter(x => x.missing.length)
+        .map(x => `${x.title}: ${x.missingTitles.join(', ')}`);
+      navigator.clipboard?.writeText(lines.join('\n')).then(() => toast('Список скопирован'), () => toast('Не смог скопировать'));
+      break;
+    }
     case 'copy-missing': {
       const s = SYS.systemById(el.dataset.id);
       const have = new Set(S.markerList().map(m => m.key));
@@ -318,6 +327,7 @@ async function handleAction(el) {
     case 'dfilter': app.docFilter = el.dataset.kind; render(); break;
 
     case 'add': pickFiles(); break;
+    case 'add-any': addAnySheet(); break;
     case 'scan': await doScan(); break;
     case 'add-meal': await addMealFlow(true); break;
     case 'pick-meal': await addMealFlow(false); break;
@@ -838,6 +848,26 @@ function medSheet(id) {
     if (!m) { app.route = 'med'; app.param = { id: saved.id }; app.stack.push({ route: 'meds', param: {} }); }
     render();
     if (db.settings().autoCloud) BK.scheduleCloudSave();
+  };
+}
+
+/* Что добавляем? Раньше «плюс» молча означал «документ», и снять еду можно
+   было, только случайно забредя на её экран. Теперь одна дверь на всё. */
+function addAnySheet() {
+  const row = (act, ic, title, sub) => `<div class="gi" data-pick="${act}">${icon(ic, 'ico s')}
+    <div class="t"><div class="nm" style="font-size:14.5px">${title}</div><div class="sm">${sub}</div></div></div>`;
+  const s = sheet(`<h2>Что добавим?</h2>
+    <div class="grp" style="margin-top:14px">
+      ${row('scan', 'camera', 'Снять бланк камерой', 'анализ, назначение, заключение')}
+      ${row('file', 'file', 'Загрузить файл или PDF', 'из галереи или выписку из лаборатории')}
+      ${row('meal', 'forkknife', 'Снять тарелку', 'калории, белки-жиры-углеводы')}
+    </div>`);
+  s.root.onclick = async (e) => {
+    const b = e.target.closest('[data-pick]'); if (!b) return;
+    s.close();
+    if (b.dataset.pick === 'scan') await doScan();
+    else if (b.dataset.pick === 'file') pickFiles();
+    else await addMealFlow(true);
   };
 }
 
