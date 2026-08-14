@@ -28,10 +28,10 @@ export function daysBetween(a, b) {
    Четыре, а не «утро-день-вечер»: «на ночь» пишут в назначениях отдельно
    и часто это единственный приём (статины, некоторые давление). */
 export const SLOTS = [
-  { id: 'morning', title: 'Утро',    when: 'до 12:00',      at: '08:00' },
-  { id: 'day',     title: 'День',    when: '12:00 – 18:00', at: '14:00' },
-  { id: 'evening', title: 'Вечер',   when: 'после 18:00',   at: '20:00' },
-  { id: 'night',   title: 'На ночь', when: 'перед сном',    at: '22:30' },
+  { id: 'morning', title: 'Утро',    when: 'до 12:00',      at: '08:00', icon: 'sunrise' },
+  { id: 'day',     title: 'День',    when: '12:00 – 18:00', at: '14:00', icon: 'sun' },
+  { id: 'evening', title: 'Вечер',   when: 'после 18:00',   at: '20:00', icon: 'moon' },
+  { id: 'night',   title: 'На ночь', when: 'перед сном',    at: '22:30', icon: 'moonstars' },
 ];
 export const slotTitle = (id) => SLOTS.find(s => s.id === id)?.title || id;
 

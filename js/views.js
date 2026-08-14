@@ -11,6 +11,7 @@ import { info } from './reference.js';
 import { tgUserName, tgUser, inTelegram } from './telegram.js';
 import { tiles, notices } from './insights.js';
 import { SYSTEMS, systemById, mapSystems, coverage } from './systems.js';
+import * as PP from './passport.js';
 
 const head = (title, sub, right = '') => `
   <div class="head">
@@ -92,12 +93,9 @@ export function summary(app) {
   html += todayBlock(app, today);
   html += archive(app);
 
-  /* Тарелка — постоянной строкой, даже когда сегодня пусто. Плитка про еду
-     появляется, только когда есть что сказать, и вход в неё пропадал совсем. */
-  const ft = S.dayTotals(today);
   html += `<div class="grp">
-    <div class="gi" data-act="go" data-r="food">${icon('forkknife', 'ico s')}<div class="t">Тарелка</div>
-      <div class="v">${ft.count ? `${Math.round(ft.kcal)} ккал` : 'сегодня пусто'}</div>${chevron()}</div>
+    <div class="gi" data-act="go" data-r="passport">${icon('shield', 'ico s')}<div class="t">Паспорт здоровья</div>
+      <div class="v">${passportSummary()}</div>${chevron()}</div>
     <div class="gi" data-act="doctor">${icon('stethoscope', 'ico s')}<div class="t">Страница для врача</div>${chevron()}</div>
   </div>`;
 
@@ -179,9 +177,12 @@ function todayBlock(app, date) {
     const taken = cur ? cur.items.filter(i => i.taken).length : 0;
     const state = !total ? 'nil' : taken === total ? 'done' : now > minutesOf(s.at) + 60 ? 'miss' : 'todo';
     const left = axPos(minutesOf(s.at));
-    return `<span class="dn ${state}${slot && slot.id === s.id ? ' sel' : ''}" style="left:${left.toFixed(1)}%">
+    /* Подписей нет: восход, солнце, луна и луна со звёздами говорят про время
+       суток быстрее слова. Цифра в кружке — сколько ещё принять. */
+    return `<span class="dn ${state}${slot && slot.id === s.id ? ' sel' : ''}" style="left:${left.toFixed(1)}%"
+      title="${esc(s.title)} · ${s.at}">
       <i>${state === 'done' ? icon('check', 'ico s') : total ? `<b>${total - taken}</b>` : ''}</i>
-      <em>${s.title.toLowerCase()}</em></span>`;
+      <em>${icon(s.icon, 'ico s')}</em></span>`;
   }).join('');
 
   return `<div class="cap">Сегодня</div>
@@ -294,6 +295,8 @@ function archive(app) {
   return html;
 }
 
+const passportSummary = () => PP.isEmpty() ? 'не заполнен' : PP.summaryLine();
+
 const WEEKDAYS = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
 const dayTitle = (iso) => {
   const [y, m, d] = iso.split('-').map(Number);
@@ -354,6 +357,7 @@ export function markers(app) {
       <div class="v">${list.length}</div>${chevron()}</div>
     <div class="gi" data-act="due">${icon('clock', 'ico s')}<div class="t">Что пора пересдать</div>
       <div class="v">${S.dueList().length || '—'}</div>${chevron()}</div>
+    <div class="gi" data-act="go" data-r="colors">${icon('eye', 'ico s')}<div class="t">Что значат цвета</div>${chevron()}</div>
   </div>`;
   return html;
 }
@@ -1237,7 +1241,7 @@ function dayTimeline(app, date, today) {
       <div class="tlt">${s.at}</div>
       <div class="tlx"><i></i></div>
       <div class="tlc">
-        <div class="tlh"><b>${s.title}</b><span>${note}</span>${isNow ? '<em>сейчас</em>' : ''}</div>
+        <div class="tlh"><b>${s.title}</b><span>${note}</span></div>
         ${items.map(x => medRow(x, s.id, date, { lock: future })).join('')}
       </div>
     </div>`;
@@ -1307,6 +1311,17 @@ export function medDetail(app) {
     ${m.instructions ? `<div class="kv"><span class="k">Как принимать</span><span class="v">${esc(m.instructions)}</span></div>` : ''}
     ${m.freqText ? `<div class="sm" style="margin-top:9px">В назначении написано: «${esc(m.freqText)}»</div>` : ''}
   </div>`;
+
+  /* Назначенное лекарство из группы, на которую записана аллергия. Приложение
+     не отменяет и не предлагает замену — показывает противоречие между двумя
+     своими записями и отправляет к тому, кто назначал. */
+  const conflict = PP.conflictsFor(m.name);
+  if (conflict.length) {
+    html += `<div class="card note danger">
+      <div class="row">${icon('warning', 'ico s')}<div class="grow"><div class="nm" style="font-size:14px;color:var(--bad)">Переспроси врача</div></div></div>
+      <div class="sm" style="margin:8px 0 0;line-height:1.55">У тебя записана аллергия на <b>${esc(conflict[0].allergy.name)}</b>${conflict[0].group ? `, а ${esc(m.name)} — это ${esc(conflict[0].group)}, та же группа` : ''}${conflict[0].allergy.note ? ` (${esc(conflict[0].allergy.note)})` : ''}. Курс я не трогаю и замену не предлагаю: покажи это тому, кто выписал.</div>
+    </div>`;
+  }
 
   if (m.source === 'ai' && !m.confirmed) {
     html += `<div class="card note">
@@ -1547,6 +1562,19 @@ export function doctor(app) {
 
   let html = backHead('Для врача', `собрано ${S.ruDate(S.todayISO())} · одна страница`);
 
+  /* Аллергии — первое, что должен увидеть тот, кто будет назначать.
+     Раньше этой строки на странице не было вовсе. */
+  const pp = PP.state();
+  html += `<div class="card ${pp.allergies.length ? 'note danger' : ''}">
+    <div class="cap" style="padding:0 0 6px">${pp.allergies.length ? 'Аллергии' : 'Аллергии не записаны'}</div>
+    ${pp.allergies.length
+      ? pp.allergies.map(a => `<div class="kv"><span class="k" style="color:var(--bad);font-weight:700">${esc(a.name)}</span><span class="v">${esc(a.note || 'реакция не описана')}</span></div>`).join('')
+      : `<div class="sm" style="line-height:1.5">Человек их не указывал — это не значит, что их нет. <b>Спросите отдельно.</b></div>
+         <button class="mini" data-act="go" data-r="passport" style="margin-top:10px">Заполнить паспорт здоровья</button>`}
+    ${pp.conditions.length ? `<div class="divide"></div><div class="kv"><span class="k">Хронические</span><span class="v">${pp.conditions.map(c => esc(c.name)).join(', ')}</span></div>` : ''}
+    ${pp.surgeries.length ? `<div class="kv"><span class="k">Операции</span><span class="v">${pp.surgeries.map(c => esc(c.name) + (c.note ? ` (${esc(c.note)})` : '')).join(', ')}</span></div>` : ''}
+  </div>`;
+
   html += `<div class="card">
     <div class="cap" style="padding:0 0 6px">Кто</div>
     <div class="kv"><span class="k">${s.sex === 'f' ? 'Женщина' : 'Мужчина'}, ${age} лет</span><span class="v">рост ${s.heightCm} · вес ${s.weightKg}</span></div>
@@ -1777,8 +1805,8 @@ export function modelsView(app) {
   <div class="card" style="padding:12px 16px">
     <input type="text" id="modelQuery" placeholder="поиск: gemini, gemma, claude…" value="${esc(app.modelQuery || '')}">
     <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:8px">
-      <button class="chip ${!freeOnly ? 'on' : ''}" data-act="model-free" data-v="0">Все · ${pool.length}</button>
-      <button class="chip ${freeOnly ? 'on' : ''}" data-act="model-free" data-v="1">Бесплатные · ${freeCount}</button>
+      <button class="chip ${!freeOnly ? 'sel' : ''}" data-act="model-free" data-v="0">Все · ${pool.length}</button>
+      <button class="chip ${freeOnly ? 'sel' : ''}" data-act="model-free" data-v="1">Бесплатные · ${freeCount}</button>
     </div>
     <div class="sm" style="margin-top:9px;line-height:1.45">${app.modelTab === 'chat'
       ? `Любая модель из ${models.length}: этой достаются вопросы по архиву и тексты.`
@@ -1822,6 +1850,107 @@ export function modelsView(app) {
   if (matched.length > filtered.length) {
     html += `<button class="btn ghost sm" data-act="model-more" style="margin-bottom:12px">Показать ещё ${Math.min(25, matched.length - filtered.length)} из ${matched.length}</button>`;
   }
+  return html;
+}
+
+/* ══ ЧТО ЗНАЧАТ ЦВЕТА ════════════════════════════════════════
+   Цветовой код на одном экране. Правило приложения: светофор говорит только
+   о здоровье, остальные краски — про дела и про то, к какой системе относится
+   показатель. Пока это правило нигде не записано для человека, оно живёт
+   только у меня в голове — а значит, его нет. */
+
+export function colorsView(app) {
+  const row = (color, title, sub) => `<div class="gi" style="cursor:default">
+    <span class="swat" style="background:${color}"></span>
+    <div class="t"><div class="nm" style="font-size:14px">${esc(title)}</div><div class="sm">${esc(sub)}</div></div>
+  </div>`;
+
+  let html = backHeadWide('Что значат цвета', 'три группы, и они не пересекаются');
+
+  html += `<div class="cap">Состояние здоровья · светофор</div>
+  <div class="grp">
+    ${row('var(--ok-dot)', 'Зелёный — в норме', 'значение внутри границ из бланка')}
+    ${row('var(--edge-dot)', 'Оранжевый — у границы', 'ближе 8% к краю коридора: ещё норма, но впритык')}
+    ${row('var(--bad-dot)', 'Красный — вне нормы', 'вышло за границы; красной рамкой обведено только противоречие «назначено то, на что аллергия»')}
+    ${row('var(--ink4)', 'Серый — неизвестно', 'границ в бланке не было или замер старше двух лет')}
+  </div>
+  <div class="sm" style="padding:0 4px 10px;line-height:1.5">Рядом с цветом всегда стоит слово или число: цвет ускоряет чтение, но никогда не остаётся единственным сигналом — на случай, если ты не различаешь оттенки.</div>`;
+
+  html += `<div class="cap">Дела · не про здоровье</div>
+  <div class="grp">
+    ${row('var(--blue)', 'Синий — приём лекарств', 'сколько принято сегодня')}
+    ${row('var(--violet)', 'Фиолетовый — изученность', 'сколько базовых анализов сдано')}
+    ${row('var(--teal)', 'Бирюзовый — еда', 'калории и БЖУ за день')}
+    ${row('var(--ink)', 'Чернила — сделано', 'отмеченный приём, закрытый день, слово ИИ')}
+  </div>`;
+
+  html += `<div class="cap">Системы организма · просто различают</div>
+  <div class="grp">
+    ${SYSTEMS.map(sy => `<div class="gi" style="cursor:default">
+      <span class="swat" style="background:var(--s-${sy.tint})"></span>
+      <div class="t"><div class="nm" style="font-size:14px">${esc(sy.title)}</div></div>
+    </div>`).join('')}
+  </div>
+  <div class="disc">Краски систем не значат «хорошо» или «плохо» — они только помогают отличить печень от почек. Ни одна из них не повторяет зелёный, оранжевый и красный.</div>`;
+  return html;
+}
+
+/* ══ ПАСПОРТ ЗДОРОВЬЯ ════════════════════════════════════════
+   То, что спрашивают первым — и чего приложение про человека не знало.
+   Числа из бланков без этой страницы — половина картины, а страница для
+   врача без строки «аллергия на пенициллин» просто опасна. */
+
+export function passportView(app) {
+  const p = PP.state();
+  const meds = MED.state.meds.filter(m => ['active', 'ask'].includes(MED.statusOf(m)));
+  const conflicts = PP.conflictingMeds(meds);
+
+  let html = backHeadWide('Паспорт здоровья', PP.isEmpty() ? 'пока пусто' : PP.summaryLine());
+
+  if (PP.isEmpty()) {
+    html += `<div class="card flat"><div class="row" style="align-items:flex-start">${icon('shield', 'ico s')}
+      <div class="grow sm" style="line-height:1.55">«На что аллергия?» — первый вопрос на приёме и в скорой. Числа из анализов на него не отвечают, а бумажка в кармане теряется. Запиши один раз — и это будет на странице для врача, в ответах ИИ и в сверке назначений.</div></div></div>`;
+  }
+
+  /* Конфликт назначения с аллергией — самое важное на экране. Приложение
+     ничего не отменяет: оно показывает противоречие между двумя своими
+     записями и просит переспросить того, кто назначал. */
+  for (const c of conflicts) {
+    html += `<div class="card note danger">
+      <div class="row">${icon('warning', 'ico s')}<div class="grow"><div class="nm" style="font-size:14px;color:var(--bad)">Переспроси врача про ${esc(c.med.name)}</div></div></div>
+      <div class="sm" style="margin:8px 0 11px;line-height:1.55">У тебя записана аллергия на <b>${esc(c.hits[0].allergy.name)}</b>${c.hits[0].group ? `, а это ${esc(c.hits[0].group)} — та же группа` : ''}. Я не отменяю назначенное и не предлагаю замену: покажи эту строку врачу, который выписал.</div>
+      <div class="chips"><button class="chip" data-act="med" data-id="${esc(c.med.id)}">Открыть курс</button></div>
+    </div>`;
+  }
+
+  html += `<div class="card">
+    <div class="cap" style="padding:0 0 8px">Группа крови</div>
+    <div class="chips">${PP.BLOOD.map(b => `<button class="chip ${p.blood === b ? 'sel' : ''}" data-act="pp-blood" data-v="${esc(b)}">${esc(b)}</button>`).join('')}</div>
+    <div class="chips" style="margin-top:8px">${PP.RH.map(r => `<button class="chip ${p.rh === r ? 'sel' : ''}" data-act="pp-rh" data-v="${esc(r)}">${esc(r)}</button>`).join('')}</div>
+    <div class="sm" style="margin-top:10px">Со слов, а не из анализа: приложение группу крови не измеряет.</div>
+  </div>`;
+
+  for (const [kind, def] of Object.entries(PP.KINDS)) {
+    const list = p[kind] || [];
+    html += `<div class="cap">${esc(def.title)}${list.length ? ` · ${list.length}` : ''}</div>`;
+    html += `<div class="grp">`;
+    if (!list.length) {
+      html += `<div class="gi" style="cursor:default"><span class="nico">${icon(def.icon, 'ico s')}</span>
+        <div class="t"><div class="nm" style="font-size:14px">Ничего не записано</div><div class="sm">${esc(def.hint)}</div></div></div>`;
+    } else {
+      html += list.map(x => `<div class="gi" style="cursor:default">
+        <span class="nico ${kind === 'allergies' ? 'out' : ''}">${icon(def.icon, 'ico s')}</span>
+        <div class="t"><div class="nm" style="font-size:14px">${esc(x.name)}</div>${x.note ? `<div class="sm">${esc(x.note)}</div>` : ''}</div>
+        <button class="rnd" data-act="pp-del" data-kind="${kind}" data-id="${esc(x.id)}" title="Убрать"
+          style="width:32px;height:32px;min-width:32px;box-shadow:none;background:var(--field);color:var(--ink3)">${icon('trash', 'ico s')}</button>
+      </div>`).join('');
+    }
+    html += `<div class="gi" data-act="pp-add" data-kind="${kind}">${icon('plus', 'ico s')}
+      <div class="t">Добавить ${esc(def.one)}</div>${chevron()}</div>`;
+    html += `</div>`;
+  }
+
+  html += `<div class="disc">Это твои слова, а не диагноз приложения. Всё хранится на устройстве и уходит только в копию архива — и в модель, когда ты сам задаёшь вопрос.</div>`;
   return html;
 }
 

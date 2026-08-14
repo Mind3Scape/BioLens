@@ -122,6 +122,9 @@ b,strong{font-weight:680}
 .card.tap{cursor:pointer}
 .card.tap:active{transform:scale(0.99)}
 .card.note{border:1px solid var(--hair2)}
+/* Единственное место, где карточка обведена красным: противоречие между
+   назначением и записанной аллергией. Больше ничего этой рамки не получает. */
+.card.note.danger{border-color:var(--bad-dot);background:var(--bad-soft)}
 .row{display:flex;align-items:center;gap:10px}
 .grow{flex:1;min-width:0}
 .divide{height:1px;background:var(--hair);margin:10px -13px}
@@ -186,6 +189,11 @@ html[data-theme="dark"] .segs{background:rgba(255,255,255,0.07)}
   padding:8px 13px;border-radius:99px;cursor:pointer;font-family:inherit;min-height:38px;display:inline-flex;
   align-items:center;justify-content:center}
 .chip.on{background:var(--ink);color:var(--surface);border-color:transparent}
+/* Выбор — это не действие. Чернильная заливка нужна кнопке «Всё верно»,
+   а «моя группа крови A (II)» достаточно обвести: экран перестаёт пестреть
+   чёрными пятнами там, где человек просто отметил своё. */
+.chip.sel{background:color-mix(in srgb, var(--ink) 7%, transparent);color:var(--ink);font-weight:750;
+  border-color:color-mix(in srgb, var(--ink) 24%, transparent)}
 .chip.ok{background:var(--ok-soft);border-color:transparent;color:var(--ok);font-weight:750}
 .chip.edge{background:var(--edge-soft);border-color:transparent;color:var(--edge);font-weight:750}
 .chip.out{background:var(--bad-soft);border-color:transparent;color:var(--bad);font-weight:750}
@@ -239,9 +247,10 @@ label.lab{display:block;font-size:12px;font-weight:700;color:var(--ink3);margin:
 .tab{display:flex;flex-direction:row;align-items:center;color:var(--ink3);font-size:12.5px;font-weight:680;
   background:none;border:none;cursor:pointer;font-family:inherit;flex:0 0 auto;padding:10px 15px;border-radius:99px;
   letter-spacing:-0.2px;transition:background .26s cubic-bezier(.22,1,.36,1), color .2s}
-/* Активная дверь — чернильная пилюля с подписью. Остальные молчат значками:
-   так панель остаётся узкой и не отнимает у экрана целую строку. */
-.tab.on{background:var(--ink);color:var(--surface)}
+/* Активная дверь — светлая капсула с подписью, а не чернильное пятно:
+   на стекле это читается мягче и не спорит с содержимым экрана. */
+.tab.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 4px rgba(21,22,27,0.10)}
+html[data-theme="dark"] .tab.on{background:rgba(255,255,255,0.14);box-shadow:none}
 .tab span{max-width:0;opacity:0;margin-left:0;white-space:nowrap;overflow:hidden;
   transition:max-width .3s cubic-bezier(.22,1,.36,1), opacity .2s, margin-left .3s}
 .tab.on span{max-width:130px;opacity:1;margin-left:7px}
@@ -576,12 +585,15 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
   justify-content:center;box-shadow:inset 0 0 0 2px var(--hair2)}
 .dn i .ico{width:12px;height:12px}
 .dn i b{font-size:11px;font-weight:800;color:var(--ink)}
-.dn em{font-style:normal;font-size:9.5px;font-weight:650;color:var(--ink4);white-space:nowrap}
+/* Знак времени суток вместо подписи: восход, солнце, луна */
+.dn em{font-style:normal;display:flex;color:var(--ink4)}
+.dn em .ico{width:14px;height:14px}
+.dn.sel em{color:var(--ink)}
 .dn.done i{background:var(--ink);box-shadow:none;color:var(--surface)}
 .dn.miss i{box-shadow:inset 0 0 0 2px var(--edge-dot)}
 .dn.miss i b{color:var(--edge)}
 .dn.nil i{width:13px;height:13px;margin:4px 0;box-shadow:inset 0 0 0 2px var(--hair)}
-.dn.sel em{color:var(--ink);font-weight:750}
+
 
 /* Час отметки: день становится записью, а не списком галочек */
 .tmk{font-size:11px;font-weight:700;color:var(--ink4);font-variant-numeric:tabular-nums}
@@ -596,3 +608,7 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
 /* Отметка приёма отзывается: галочка появляется толчком, а не мигает */
 .tick.on .ico{animation:pop .32s cubic-bezier(.34,1.56,.64,1) both}
 @keyframes pop{from{transform:scale(.3);opacity:0}to{transform:none;opacity:1}}
+
+/* Образец цвета в легенде: круг размером с точку состояния, но крупнее,
+   чтобы оттенок было видно, а не угадывать. */
+.swat{width:26px;height:26px;min-width:26px;border-radius:99px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.06)}

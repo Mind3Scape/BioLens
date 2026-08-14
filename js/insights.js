@@ -11,6 +11,7 @@
 import * as S from './store.js';
 import * as MED from './meds.js';
 import { coverage } from './systems.js';
+import * as PP from './passport.js';
 import { markerTitle } from './markers.js';
 
 const RU_MONTH = (n) => n === 1 ? 'месяц' : n < 5 ? 'месяца' : 'месяцев';
@@ -39,7 +40,28 @@ export function tiles(app) {
     });
   }
 
-  /* 2. Что вне нормы прямо сейчас — с линией, а не одним числом:
+  /* 2. Еда — ВСЕГДА, даже когда сегодня пусто. Это счётчик дня наравне с
+        приёмом лекарств: если он появляется через раз, его перестают искать.
+        Ноль здесь честный, а не пустая карточка с прочерком. */
+  const t = S.dayTotals(today);
+  const tg = S.dayTargets();
+  const goal = S.foodGoal();
+  out.push({
+    id: 'food',
+    kind: 'съедено сегодня',
+    value: `${Math.round(t.kcal)}`, suffix: 'ккал',
+    title: t.count
+      ? `${t.count} ${t.count === 1 ? 'приём' : t.count < 5 ? 'приёма' : 'приёмов'} пищи`
+      : 'Ещё ничего не снято',
+    sub: t.count
+      ? `Б ${Math.round(t.protein_g)} · Ж ${Math.round(t.fat_g)} · У ${Math.round(t.carbs_g)}`
+      : goal ? `цель из анализов: ${goal.goal}` : `ориентир дня — ${tg.kcal} ккал`,
+    tone: 'food',
+    act: 'go', data: { r: 'food' },
+    ring: tg.kcal ? Math.min(1, t.kcal / tg.kcal) : 0,
+  });
+
+  /* 3. Что вне нормы прямо сейчас — с линией, а не одним числом:
         «12 два года подряд» и «12 впервые» — разные новости. */
   const bad = list.filter(m => !m.stale && m.status === 'out')[0]
     || list.filter(m => !m.stale && m.status === 'edge')[0];
@@ -56,7 +78,7 @@ export function tiles(app) {
     });
   }
 
-  /* 3. Настоящий сдвиг за год — уже отфильтрованный от разброса лабораторий. */
+  /* 4. Настоящий сдвиг за год — уже отфильтрованный от разброса лабораторий. */
   const sh = S.shifts(3).filter(m => m.deltaTone !== 'flat')[0] || S.shifts(1)[0];
   if (sh && sh.base) {
     const diff = +(sh.last.value - sh.base.value).toFixed(2);
@@ -74,7 +96,7 @@ export function tiles(app) {
     });
   }
 
-  /* 4. Изученность тела. Единственная плитка про то, чего ЕЩЁ НЕТ:
+  /* 5. Изученность тела. Единственная плитка про то, чего ЕЩЁ НЕТ:
         пустая система — это не «здоров», это «неизвестно». */
   const cov = coverage(list);
   if (list.length) {
@@ -91,7 +113,7 @@ export function tiles(app) {
     });
   }
 
-  /* 5. Что пора пересдать: срок из рекомендаций, а не выдумка. */
+  /* 6. Что пора пересдать: срок из рекомендаций, а не выдумка. */
   const due = S.dueList()[0];
   if (due) {
     const months = Math.max(1, Math.floor(due.daysOld / 30));
@@ -106,7 +128,7 @@ export function tiles(app) {
     });
   }
 
-  /* 6. Дисциплина приёма — то немногое, что человек делает сам. */
+  /* 7. Дисциплина приёма — то немногое, что человек делает сам. */
   const streak = takeStreak(today);
   if (streak >= 3) {
     out.push({
@@ -117,23 +139,6 @@ export function tiles(app) {
       sub: 'считаю только то, что отмечено',
       tone: 'ok',
       act: 'go', data: { r: 'meds' },
-    });
-  }
-
-  /* 7. Еда — только когда у неё есть цель из анализов или уже есть записи. */
-  const t = S.dayTotals(today);
-  const goal = S.foodGoal();
-  if (t.count || goal) {
-    out.push({
-      id: 'food',
-      kind: t.count ? 'сегодня съедено' : 'цель из анализов',
-      value: t.count ? `${Math.round(t.kcal)}` : goal.goal,
-      suffix: t.count ? 'ккал' : '',
-      title: t.count ? `${t.count} ${t.count === 1 ? 'приём' : t.count < 5 ? 'приёма' : 'приёмов'} пищи` : 'Сними тарелку',
-      sub: t.count ? `Б ${Math.round(t.protein_g)} · Ж ${Math.round(t.fat_g)} · У ${Math.round(t.carbs_g)}` : `${goal.title} ${S.trim(goal.value)} ${goal.unit}`,
-      tone: 'food',
-      act: 'go', data: { r: 'food' },
-      small: !t.count,
     });
   }
 
@@ -180,6 +185,28 @@ export function notices(app = {}) {
       title: humanAiError(app.aiSummaryError),
       sub: 'разбор документов и ответы пока не работают',
       act: 'settings', data: {},
+    });
+  }
+
+  /* Противоречие «назначено то, на что аллергия» — самое важное, что
+     приложение вообще может сказать. Первым в списке и красным. */
+  for (const c of PP.conflictingMeds(MED.state.meds.filter(m => ['active', 'ask'].includes(MED.statusOf(m, today))))) {
+    out.unshift({
+      id: 'allergy-' + c.med.id, icon: 'warning', tone: 'out',
+      title: `${c.med.name} и твоя аллергия на ${c.hits[0].allergy.name}`,
+      sub: 'переспроси врача — приложение ничего не отменяет само',
+      act: 'med', data: { id: c.med.id },
+    });
+  }
+
+  /* Пустой паспорт при живых назначениях — не тревога, а честный пробел:
+     без аллергий сверять назначения не с чем. */
+  if (PP.isEmpty() && MED.state.meds.length) {
+    out.push({
+      id: 'passport', icon: 'shield', tone: 'slate',
+      title: 'Аллергии не записаны',
+      sub: 'первый вопрос на приёме — и я смогу сверять с ним назначения',
+      act: 'go', data: { r: 'passport' },
     });
   }
 

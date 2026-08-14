@@ -28,6 +28,9 @@ function skeleton() {
     at: new Date().toISOString(),
     uid: TG.tgUser()?.id || null,
     profile: { sex: s.sex, birthYear: s.birthYear, heightCm: s.heightCm, weightKg: s.weightKg },
+    /* Аллергии и хронические болезни человек вводит руками — потерять их
+       при смене телефона нельзя, а восстановить неоткуда. */
+    passport: s.passport || null,
     docs: S.state.docs.filter(d => !d.demo).map(d => ({
       i: d.id, t: d.title, y: d.date, k: d.type, l: d.lab, s: d.status,
       c: d.conclusion || null, n: d.note || null, f: d.fileName || null, m: d.markersCount || 0,
@@ -68,6 +71,14 @@ function restoreSkeleton(data) {
     title: x.t, nutrition: x.n, items: x.it || [], micros: x.mi || [], confidence: x.cf, imageLost: true,
   }));
   const { meds, intakes } = MED.fromBackup(data);
+  /* Паспорт здоровья возвращаем сразу: он лежит в настройках, а не в базе,
+     и «слить» его построчно, как документы, не с чем. Своё непустое не
+     затираем — на этом устройстве человек мог записать больше. */
+  if (data.passport) {
+    const cur = db.settings().passport;
+    const empty = !cur || (!cur.blood && !(cur.allergies || []).length && !(cur.conditions || []).length && !(cur.surgeries || []).length);
+    if (empty) db.saveSettings({ passport: data.passport });
+  }
   return { docs, meas, meals, meds, intakes };
 }
 

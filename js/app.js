@@ -4,6 +4,7 @@ import * as db from './db.js';
 import * as S from './store.js';
 import * as MED from './meds.js';
 import * as SYS from './systems.js';
+import * as PP from './passport.js';
 import * as V from './views.js';
 import { $, $$, esc, toast, sheet, confirmSheet } from './ui.js';
 import { icon } from './icons.js';
@@ -58,6 +59,8 @@ function render() {
   else if (app.route === 'markers-all') html = V.markersAll(app);
   else if (app.route === 'system') html = V.systemView(app);
   else if (app.route === 'gaps') html = V.gapsView(app);
+  else if (app.route === 'passport') html = V.passportView(app);
+  else if (app.route === 'colors') html = V.colorsView(app);
   else if (app.route === 'notices') html = V.noticesView(app);
   else if (app.route === 'marker') html = V.markerDetail(app);
   else if (app.route === 'timeline') html = V.timeline(app);
@@ -302,6 +305,17 @@ async function handleAction(el) {
       const pos = view.scrollTop; render(); $('#view').scrollTop = pos;
       break;
     }
+    /* ── паспорт здоровья ── */
+    case 'pp-blood': PP.save({ blood: PP.state().blood === el.dataset.v ? '' : el.dataset.v }); render(); break;
+    case 'pp-rh': PP.save({ rh: PP.state().rh === el.dataset.v ? '' : el.dataset.v }); render(); break;
+    case 'pp-del': {
+      PP.removeItem(el.dataset.kind, el.dataset.id);
+      const pos = view.scrollTop; render(); $('#view').scrollTop = pos;
+      if (db.settings().autoCloud) BK.scheduleCloudSave();
+      break;
+    }
+    case 'pp-add': passportSheet(el.dataset.kind); break;
+
     case 'copy-gaps': {
       const have = new Set(S.markerList().map(m => m.key));
       const lines = SYS.mapSystems(S.markerList()).filter(x => x.missing.length)
@@ -708,6 +722,9 @@ function doctorText() {
   const taking = MED.state.meds.filter(m => ['active', 'ask'].includes(MED.statusOf(m)));
   const lines = [
     `${s.sex === 'f' ? 'Женщина' : 'Мужчина'}, ${age} лет, рост ${s.heightCm} см, вес ${s.weightKg} кг.`,
+    /* Аллергии идут раньше всего остального: это первое, что должен узнать
+       любой, кто будет что-то назначать. */
+    ...PP.doctorLines(),
     ...(taking.length ? ['', 'Принимаю сейчас:',
       ...taking.map(m => `• ${m.name}${m.dose ? ` ${m.dose}` : ''} — ${MED.scheduleText(m)}${MED.progressOf(m).total ? `, ${MED.courseText(m)}` : ''}${m.docDate ? `, назначено ${S.ruShort(m.docDate)}` : ''}`)] : []),
     '',
@@ -790,9 +807,9 @@ function medSheet(id) {
   let food = m?.food || null;
 
   const slotChips = () => MED.SLOTS.map(s =>
-    `<button class="chip ${picked.has(s.id) ? 'on' : ''}" data-slot-pick="${s.id}">${s.title}</button>`).join('');
+    `<button class="chip ${picked.has(s.id) ? 'sel' : ''}" data-slot-pick="${s.id}">${s.title}</button>`).join('');
   const foodChips = () => [['before', 'До еды'], ['with', 'Во время'], ['after', 'После еды'], ['', 'Не важно']].map(([v, t]) =>
-    `<button class="chip ${(food || '') === v ? 'on' : ''}" data-food-pick="${v}">${t}</button>`).join('');
+    `<button class="chip ${(food || '') === v ? 'sel' : ''}" data-food-pick="${v}">${t}</button>`).join('');
 
   const s = sheet(`
     <h2>${m ? 'Курс лечения' : 'Новое лекарство'}</h2>
@@ -847,6 +864,27 @@ function medSheet(id) {
     toast(m ? 'Сохранил' : `Добавил: ${saved.name}`);
     if (!m) { app.route = 'med'; app.param = { id: saved.id }; app.stack.push({ route: 'meds', param: {} }); }
     render();
+    if (db.settings().autoCloud) BK.scheduleCloudSave();
+  };
+}
+
+/* Запись в паспорт здоровья. Никаких подсказок-автодополнений: приложение
+   не должно подсовывать человеку диагнозы, которых он не называл. */
+function passportSheet(kind) {
+  const def = PP.KINDS[kind];
+  const s = sheet(`<h2>Добавить ${def.one}</h2>
+    <p class="sm" style="margin:8px 0 16px;line-height:1.5">${def.hint}. Пиши как есть — своими словами.</p>
+    <label class="lab">Название</label>
+    <input type="text" id="ppName" placeholder="${kind === 'allergies' ? 'Пенициллин' : kind === 'conditions' ? 'Гипертония' : 'Аппендэктомия'}" autocomplete="off">
+    <label class="lab" style="margin-top:14px">${kind === 'allergies' ? 'Что происходит (необязательно)' : kind === 'surgeries' ? 'Когда (необязательно)' : 'Уточнение (необязательно)'}</label>
+    <input type="text" id="ppNote" placeholder="${kind === 'allergies' ? 'сыпь, отёк' : kind === 'surgeries' ? '2019' : 'с 2020 года'}" autocomplete="off">
+    <button class="btn" data-save style="margin-top:16px">Добавить</button>
+    ${kind === 'allergies' ? `<div class="disc">Аллергии сверяются с назначениями: если врач выпишет лекарство из той же группы, приложение попросит переспросить. Оно ничего не отменяет.</div>` : ''}`);
+  s.root.querySelector('[data-save]').onclick = async () => {
+    const name = s.root.querySelector('#ppName').value.trim();
+    if (!name) { toast('Без названия не сохраню'); return; }
+    await PP.addItem(kind, name, s.root.querySelector('#ppNote').value);
+    s.close(); render(); toast('Записал');
     if (db.settings().autoCloud) BK.scheduleCloudSave();
   };
 }

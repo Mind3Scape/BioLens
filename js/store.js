@@ -6,6 +6,7 @@ import { matchMarker, toCanonical, defaultRef, markerTitle, markerUnit, markerGr
 import { analyzeDocument, analyzeMeal } from './openrouter.js';
 import { isPdf, pdfToImages } from './pdfdoc.js';
 import * as MED from './meds.js';
+import * as PP from './passport.js';
 /* Дата «сегодня» по местному времени живёт в meds.js — там она критична.
    Отдаём её дальше отсюда, чтобы экраны не считали день по Гринвичу. */
 export { todayISO } from './meds.js';
@@ -812,6 +813,11 @@ export function buildContext({ maxMarkers = 120 } = {}) {
   if (total > maxMarkers) {
     lines.push(`(показаны ${maxMarkers} из ${total} — остальные есть в архиве, просто не поместились сюда)`);
   }
+  /* Паспорт здоровья — раньше всего остального: модель, не знающая про
+     аллергию и хронические болезни, рассуждает о человеке вслепую. */
+  const ppText = PP.contextText();
+  if (ppText) { lines.push(''); lines.push(ppText); }
+
   /* Лекарства идут сразу за показателями: разговор о печени или сахаре без
      знания о том, что человек сейчас принимает, — разговор вслепую. */
   const medText = MED.contextText();
