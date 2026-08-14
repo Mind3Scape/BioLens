@@ -257,6 +257,37 @@ label.lab{display:block;font-size:12px;font-weight:700;color:var(--ink3);margin:
   animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* ── архив сеткой ──
+   Документ узнаётся по виду быстрее, чем по названию: бланк лаборатории,
+   снимок и лист назначений различаются с одного взгляда. Поэтому в архиве
+   на главной лежат сами страницы, а не строчки текста про них.
+   Плитки стоят прямо на холсте, без карточки-обёртки: лишняя рамка вокруг
+   рамок только съедала ширину. */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
+.tile{background:var(--surface);border-radius:14px;overflow:hidden;box-shadow:var(--shadow);border:none;padding:0;
+  cursor:pointer;font-family:inherit;text-align:left;display:block;width:100%;color:inherit}
+.tile:active{transform:scale(0.97)}
+/* Подложка белая, как бумага: серая читалась бы как рамка вокруг листа.
+   Показываем ВЕРХ страницы — там шапка с названием и лабораторией, по ним
+   документ и узнают; низ бланка одинаков у всех. */
+.tile .ph{position:relative;aspect-ratio:3/4;background:#fff;display:flex;align-items:center;
+  justify-content:center;color:var(--ink4);box-shadow:inset 0 0 0 0.5px var(--hair)}
+html[data-theme="dark"] .tile .ph{background:#F2F2F0}
+.tile .ph img{width:100%;height:100%;object-fit:cover;object-position:top center;display:block}
+.tile .meta{padding:6px 7px 7px}
+/* Место под две строки держим всегда: иначе соседние плитки в ряду разной
+   высоты, и низ сетки идёт лесенкой. */
+.tile .t2{font-size:11px;font-weight:650;letter-spacing:-0.1px;line-height:1.25;min-height:27px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tile .d2{font-size:10px;color:var(--ink4);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Число вне нормы — единственное, что горит цветом на плитке */
+.tile .bdg{position:absolute;top:5px;right:5px;min-width:19px;height:19px;padding:0 5px;border-radius:99px;
+  background:var(--bad-dot);color:#fff;font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.tile .bdg.wait{background:var(--ink);color:var(--surface)}
+.tile .pg{position:absolute;left:5px;bottom:5px;padding:2px 6px;border-radius:99px;background:rgba(21,22,27,0.6);
+  color:#fff;font-size:9.5px;font-weight:700;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+
 /* ── миниатюры ── */
 .thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .thumb{aspect-ratio:3/4;border-radius:12px;overflow:hidden;background:var(--field);position:relative;box-shadow:0 2px 8px rgba(21,22,27,0.09)}

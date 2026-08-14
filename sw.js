@@ -1,7 +1,7 @@
 /* Оболочка кэшируется, данные — никогда: они и так лежат в IndexedDB.
    Запросы к openrouter.ai проходят мимо кэша всегда. */
 
-const CACHE = 'biolens-v13';
+const CACHE = 'biolens-v14';
 const SHELL = [
   './', './index.html', './css/app.css',
   './js/app.js', './js/db.js', './js/store.js', './js/views.js',

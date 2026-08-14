@@ -40,8 +40,11 @@ function paperSvg(title, date, lab, rows) {
     <text x="26" y="${150 + i * 30}" font-size="15" fill="#2a2c33">${r[0]}</text>
     <text x="374" y="${150 + i * 30}" font-size="15" font-weight="700" fill="#15161b" text-anchor="end">${r[1]}</text>
     <line x1="26" y1="${160 + i * 30}" x2="374" y2="${160 + i * 30}" stroke="#e6e6e8" stroke-dasharray="2 3"/>`).join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="${170 + rows.length * 30}" viewBox="0 0 400 ${170 + rows.length * 30}">
-    <rect width="400" height="${170 + rows.length * 30}" fill="#fbfbf9"/>
+  /* Лист держим портретным, как настоящая бумага: в превью архива документ
+     узнают по форме страницы, а альбомный обрубок ни на что не похож. */
+  const h = Math.max(566, 170 + rows.length * 30);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="${h}" viewBox="0 0 400 ${h}">
+    <rect width="400" height="${h}" fill="#fbfbf9"/>
     <text x="26" y="48" font-size="17" font-weight="700" fill="#15161b">${title}</text>
     <text x="26" y="72" font-size="13" fill="#7b7d86">${lab} · ${date}</text>
     <line x1="26" y1="96" x2="374" y2="96" stroke="#15161b" stroke-width="1.5"/>

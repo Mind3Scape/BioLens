@@ -290,9 +290,9 @@ function archive(app, needsAttention) {
 
   const recent = [...all]
     .sort((a, b) => (b.date || b.addedAt || '').localeCompare(a.date || a.addedAt || ''))
-    .slice(0, 5);
+    .slice(0, 6);
   html += `<div class="cap">Архив · ${all.length} ${plural(all.length, 'файл', 'файла', 'файлов')}</div>`;
-  html += `<div class="card list" style="margin-bottom:8px">${recent.map(d => docRow(d, d.status !== 'ready')).join('')}</div>`;
+  html += `<div class="grid">${recent.map(docTile).join('')}</div>`;
   html += `<div class="grp">
     ${addRows}
     <div class="gi" data-act="tab" data-tab="timeline">${icon('calendar', 'ico s')}<div class="t">Все файлы по годам</div><div class="v">${all.length}</div>${chevron()}</div>
@@ -668,6 +668,36 @@ function docRow(d, showBadge) {
           <div class="val c-out" style="font-size:15px">${outCount}</div>
           <div class="unit" style="display:block;margin:1px 0 0">вне нормы</div></div>` : '')}
   </div>`;
+}
+
+/* Плитка архива: сама страница документа, а не рассказ о ней.
+   Справа вверху — единственное число, ради которого стоит открыть бланк:
+   сколько показателей вышли за границы. У документов, которым нужно
+   внимание, там стоит восклицательный знак, а не число. */
+function docTile(d) {
+  const ms = S.state.meas.filter(m => m.docId === d.id);
+  const known = ms.filter(m => m.refLow != null || m.refHigh != null);
+  const outCount = known.filter(m => (m.refLow != null && m.value < m.refLow) || (m.refHigh != null && m.value > m.refHigh)).length;
+  const busy = ['queued', 'reading'].includes(d.status);
+  const problem = ['needs-date', 'error', 'skipped', 'duplicate', 'foreign', 'needs-file'].includes(d.status);
+  const shot = (d.pages && d.pages[0]) || d.blobId || null;
+  const pages = d.pageCount || (d.pages || []).length;
+
+  const badge = problem ? `<div class="bdg wait">!</div>`
+    : busy ? `<div class="bdg wait">…</div>`
+    : outCount ? `<div class="bdg">${outCount}</div>` : '';
+
+  return `<button class="tile" data-act="doc" data-id="${esc(d.id)}">
+    <div class="ph">
+      ${shot ? `<img data-blob="${esc(shot)}" alt="" loading="lazy">` : icon(docIcon(d.type, d.isPdf), 'ico l')}
+      ${badge}
+      ${pages > 1 ? `<div class="pg">${pages} стр.</div>` : ''}
+    </div>
+    <div class="meta">
+      <div class="t2">${esc(d.title || d.fileName || 'Документ')}</div>
+      <div class="d2">${d.date ? S.ruShort(d.date) : (busy ? 'читаю…' : 'без даты')}</div>
+    </div>
+  </button>`;
 }
 
 function docIcon(type, isPdf) {
