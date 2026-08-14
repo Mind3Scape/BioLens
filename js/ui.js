@@ -324,6 +324,34 @@ export function rangeBar(value, low, high, unit = '', status) {
   </div>`;
 }
 
+/* Одна строка вместо абзаца: где значение стоит относительно коридора нормы.
+   Список «выше нормы, выше нормы, у границы» ничего не говорит о том,
+   насколько выше. Полоска говорит это без единого слова. */
+export function miniRange(value, low, high, status) {
+  const v = Number(value);
+  if (!isFinite(v) || (low == null && high == null)) return '';
+  const lo = low != null ? Number(low) : null;
+  const hi = high != null ? Number(high) : null;
+  const span = (hi != null && lo != null) ? (hi - lo) : Math.abs(v) * 0.6 || 1;
+  const from = Math.min(lo != null ? lo : v, v) - span * 0.45;
+  const to = Math.max(hi != null ? hi : v, v) + span * 0.45;
+  const pos = (x) => Math.max(0, Math.min(100, ((x - from) / ((to - from) || 1)) * 100));
+  const l = lo != null ? pos(lo) : 0;
+  const r = hi != null ? pos(hi) : 100;
+  return `<div class="mrange">
+    <i class="band" style="left:${l.toFixed(1)}%;width:${Math.max(2, r - l).toFixed(1)}%"></i>
+    <i class="pin" style="left:${pos(v).toFixed(1)}%;background:${toneDot(status)}"></i>
+  </div>`;
+}
+
+/* Доля показателей по состояниям одной полосой: сколько всего и чего именно.
+   Три крупных числа занимали четверть экрана и говорили ровно то же. */
+export function stackBar(parts) {
+  const total = parts.reduce((n, p) => n + p.n, 0) || 1;
+  return `<div class="hbar">${parts.filter(p => p.n).map(p =>
+    `<i style="width:${(p.n / total * 100).toFixed(1)}%;background:${p.color}"></i>`).join('')}</div>`;
+}
+
 /* Клинические ступени — там, где «норма лаборатории» и смысл числа расходятся.
    Классика: витамин D, где 25 нг/мл формально «ниже нормы», а по рекомендациям
    это «недостаточность», а не дефицит. У каждой ступени свой цвет светофора. */

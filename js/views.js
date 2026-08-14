@@ -5,7 +5,7 @@ import * as S from './store.js';
 import * as db from './db.js';
 import * as MED from './meds.js';
 import { icon } from './icons.js';
-import { esc, sparkline, chart, statusDot, statusTag, statusWord, toneVar, inkTone, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale } from './ui.js';
+import { esc, sparkline, chart, statusDot, statusTag, statusWord, toneVar, inkTone, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale, miniRange, stackBar } from './ui.js';
 import { markerTitle, markerGroup, MARKERS } from './markers.js';
 import { info } from './reference.js';
 import { tgUserName, tgUser, inTelegram } from './telegram.js';
@@ -32,12 +32,13 @@ const backHeadWide = (title, sub, right = '') => `
     ${right}
   </div>`;
 
-export const backIcon = () => `<svg class="ico s" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="14.5,5 7.5,12 14.5,19"/></svg>`;
+/* ⚠️Класс `ico` нельзя: в нём `fill:currentColor`, а CSS сильнее атрибута
+   `fill="none"` — галочка заливалась и превращалась в жирный чёрный треугольник.
+   У линейных знаков свой класс со своей заливкой. */
+export const backIcon = () => `<svg class="chev back" viewBox="0 0 24 24"><polyline points="14.5,5 7.5,12 14.5,19"/></svg>`;
 
-/* Один знак «это открывается» на всё приложение. Раньше в правом углу карточек
-   стояли разные декоративные иконки — лист, плюс, — и по ним нельзя было
-   отличить кнопку от украшения. */
-const chevron = () => `<svg class="ico s" viewBox="0 0 24 24" fill="none" stroke="var(--ink4)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><polyline points="9.5,5 16.5,12 9.5,19"/></svg>`;
+/* Один знак «это открывается» на всё приложение — тонкий, тише текста рядом. */
+const chevron = () => `<svg class="chev" viewBox="0 0 24 24"><polyline points="9.5,5 16.5,12 9.5,19"/></svg>`;
 
 const avatarBtn = `<button class="rnd" data-act="settings">${icon('user', 'ico s')}</button>`;
 const addBtn = `<button class="rnd dark" data-act="add">${icon('plus', 'ico s')}</button>`;
@@ -86,26 +87,6 @@ export function summary(app) {
     html += `<div class="card"><div class="row"><div class="spin"></div><div class="grow sm">Смотрю, что изменилось…</div></div></div>`;
   }
 
-  const shifts = S.shifts(2);
-  if (shifts.length) {
-    html += `<div class="cap">Сдвинулось за год</div><div class="card list">`;
-    html += shifts.map(m => {
-      const dir = m.change > 0 ? '+' : '';
-      // цвет по смыслу: приблизилось к норме или ушло от неё
-      const tone = S.changeTone(m.key, m.base?.value, m.last.value, m.last.refLow, m.last.refHigh);
-      return `<div class="it" data-act="marker" data-key="${esc(m.key)}">
-        ${statusDot(m.status)}
-        <div class="grow"><div class="nm">${esc(m.title)}</div>
-          <div class="sm">было ${S.trim(m.base?.value ?? '—')} · норма ${esc(S.fmtRef(m.last))}</div></div>
-        ${sparkline(m.series, { w: 54, h: 22 })}
-        <div style="text-align:right;min-width:48px">
-          <div class="val" style="color:${inkTone(m.status)}">${S.trim(m.last.value)}</div>
-          <div class="delta ${tone}" style="display:block;margin-top:1px">${dir}${Math.round(m.change * 100)}%</div></div>
-      </div>`;
-    }).join('');
-    html += `</div>`;
-  }
-
   /* Три бывшие карточки во всю ширину — теперь три строки одной группы.
      Каждая из них раньше занимала по 70 пикселей ради одной мысли. */
   const rows = [];
@@ -149,40 +130,58 @@ function dashboard(app) {
   const ok = list.filter(m => m.status === 'ok').length;
   const lastDate = list.map(m => m.last.date).filter(Boolean).sort().slice(-1)[0];
   const attention = S.attentionList();
-  const shown = attention.slice(0, 3);
+  const shown = attention.slice(0, 2);
 
-  const tile = (n, label, cls) => `<button class="stat" data-act="tab" data-tab="markers">
-    <div class="n ${cls}">${n}</div><div class="l">${label}</div></button>`;
+  /* Одна полоса вместо трёх крупных чисел: доля видна мгновенно, а сами числа
+     стоят подписью под ней. Раньше это была четверть первого экрана. */
+  const legend = [
+    out ? `<span class="c-out">${out}</span> вне нормы` : null,
+    edge ? `<span class="c-edge">${edge}</span> у границы` : null,
+    ok ? `${ok} в норме` : null,
+  ].filter(Boolean).join(' · ');
 
   return `<div class="card">
-    <div class="stats">
-      ${tile(out, 'вне нормы', 'c-out')}
-      ${tile(edge, 'у границы', 'c-edge')}
-      ${tile(ok, 'в норме', '')}
+    <div class="row" style="align-items:baseline">
+      <div class="grow"><div class="nm" style="font-size:13px;font-weight:750">Состояние</div></div>
+      <div class="sm">${lastDate ? `бланк ${S.ruShort(lastDate)}` : ''}</div>
     </div>
-    ${shown.length ? `<div class="divide"></div><div class="list">${shown.map(m => `
-      <div class="it" data-act="marker" data-key="${esc(m.key)}">
-        ${statusDot(m.status)}
-        <div class="grow"><div class="nm">${esc(m.title)}</div>
-          <div class="sm">${statusWord(m.status, m.last.value, m.last.refLow, m.last.refHigh)} · норма ${esc(S.fmtRef(m.last))}</div></div>
-        ${sparkline(m.series, { w: 54, h: 22 })}
-        <div style="text-align:right;min-width:50px">
-          <div class="val" style="color:${inkTone(m.status)}">${S.trim(m.last.value)}</div>
-          <div class="unit" style="display:block;margin:1px 0 0">${esc(m.unit)}</div>
-        </div>
-      </div>`).join('')}</div>` : ''}
+    ${stackBar([
+      { n: out, color: 'var(--bad-dot)' },
+      { n: edge, color: 'var(--edge-dot)' },
+      { n: ok, color: 'var(--hair2)' },
+    ])}
+    <div class="sm" style="margin-top:7px">${legend}</div>
+    ${shown.length ? `<div class="divide"></div>${shown.map(attRow).join('<div class="divide"></div>')}` : ''}
     <div class="divide"></div>
     <div class="row" style="cursor:pointer" data-act="tab" data-tab="markers">
-      <div class="grow sm">${attention.length > shown.length ? `Ещё ${attention.length - shown.length} вне нормы · ` : ''}${list.length} ${plural(list.length, 'показатель', 'показателя', 'показателей')}${lastDate ? ` · бланк ${S.ruShort(lastDate)}` : ''}</div>
+      <div class="grow sm">${attention.length > shown.length ? `Ещё ${attention.length - shown.length} требуют внимания · ` : ''}все ${list.length} ${plural(list.length, 'показатель', 'показателя', 'показателей')}</div>
       ${chevron()}
     </div>
   </div>`;
 }
 
+/* Показатель вне нормы: название, число и полоска, на которой видно,
+   НАСКОЛЬКО он вышел за коридор. Слова «выше нормы» этого не говорят. */
+function attRow(m) {
+  const st = m.status;
+  return `<div class="att" data-act="marker" data-key="${esc(m.key)}">
+    <div class="row" style="align-items:baseline;gap:8px">
+      <div class="grow nm">${esc(m.title)}</div>
+      <div class="val" style="color:${inkTone(st)}">${S.trim(m.last.value)}<span class="unit">${esc(m.unit)}</span></div>
+    </div>
+    ${miniRange(m.last.value, m.last.refLow, m.last.refHigh, st)}
+    <div class="row" style="gap:6px">
+      <div class="grow sm">${statusWord(st, m.last.value, m.last.refLow, m.last.refHigh)} · норма ${esc(S.fmtRef(m.last))}</div>
+      ${sparkline(m.series, { w: 50, h: 18 })}
+    </div>
+  </div>`;
+}
+
 /* ── приём лекарств на сегодня ──────────────────────────────────
-   Утро, день, вечер и «на ночь» — ровно так, как их пишут в назначениях.
-   Отметка одна на приём, повторное нажатие её снимает: ошибиться пальцем
-   в списке лекарств человек имеет право. */
+   Лента дня: утро, день, вечер и ночь стоят ВСЕГДА, даже пустые. Раньше
+   показывались только те части, где что-то назначено, и человек видел
+   «утро и вечер» без всякого объяснения, куда делись остальные.
+   Нажатие на часть дня открывает её список; по умолчанию открыта текущая. */
 function medsToday(app, date, plan) {
   const meds = MED.state.meds;
   if (!meds.length) {
@@ -193,14 +192,11 @@ function medsToday(app, date, plan) {
   }
 
   let html = '';
-  /* Одна строка вместо карточки с перечислением: список тех же лекарств
-     стоит прямо под ней, повторять их названия здесь — тратить две строки
-     на то, что и так видно. */
   const check = MED.unconfirmed();
   if (check.length) {
     html += `<div class="grp"><div class="gi" data-act="tab" data-tab="meds">
       ${icon('warning', 'ico s')}
-      <div class="t">${check.length === 1 ? 'Назначение не проверено' : `Не проверены назначения`}</div>
+      <div class="t">${check.length === 1 ? 'Назначение не проверено' : 'Не проверены назначения'}</div>
       <div class="v">${check.length === 1 ? 'сверь с листом' : `${check.length} шт.`}</div>
       ${chevron()}</div></div>`;
   }
@@ -227,25 +223,60 @@ function medsToday(app, date, plan) {
       ${chevron()}</div></div>`;
   }
 
-  const nowId = MED.nowSlot(date)?.id;
-  html += `<div class="cap">Приём лекарств · ${d.taken} из ${d.total}</div>`;
-  html += `<div class="card" style="padding:4px 13px 8px">`;
-  html += plan.map(slot => {
-    const takenIn = slot.items.filter(i => i.taken).length;
-    return `<div class="slot${slot.id === nowId ? ' now' : ''}">
-      <div class="slot-h">
-        <div class="grow"><span class="t">${slot.title}</span> <span class="w">${slot.when}</span></div>
-        <span class="sm">${takenIn === slot.items.length ? 'принято' : `${takenIn} из ${slot.items.length}`}</span>
-      </div>
-      ${slot.items.map(i => medRow(i, slot.id, date)).join('')}
-    </div>`;
-  }).join('');
-  html += `</div>`;
+  html += `<div class="cap">Приём лекарств</div>`;
+  html += `<div class="card">${dayRibbon(app, date, plan, d)}</div>`;
   return html;
 }
 
-/* Строка приёма: отметка слева, лекарство посередине, вход в курс справа.
-   Нажатие на кружок отмечает приём, нажатие на строку открывает курс. */
+/* Лента дня + список выбранной части. Живёт отдельной функцией: тем же
+   блоком пользуется вкладка «Лекарства», и расходиться они не должны. */
+function dayRibbon(app, date, plan, d) {
+  const nowId = MED.currentSlot();
+  const byId = Object.fromEntries(plan.map(s => [s.id, s]));
+  /* Выбрана та часть дня, на которую человек нажал; иначе — текущая,
+     а если в ней уже всё принято, ближайшая, где ещё есть дела.
+     Нажать можно и на пустую часть — тогда внизу честно написано, что на это
+     время ничего не назначено. Раньше выбор пустой части молча откатывался,
+     и кнопка выглядела сломанной. */
+  const sel = (app.medSlot && MED.SLOTS.some(s => s.id === app.medSlot)) ? app.medSlot
+    : (MED.nowSlot(date)?.id || nowId);
+  const cur = byId[sel];
+
+  const done = d.total && d.taken === d.total;
+  const left = MED.SLOTS.map(s => {
+    const has = byId[s.id];
+    const takenIn = has ? has.items.filter(i => i.taken).length : 0;
+    const total = has ? has.items.length : 0;
+    // ⚠️не 'empty': этот класс в приложении уже занят пустым экраном
+    // с отступом в 34 пикселя, и плитка раздувалась втрое
+    const state = !total ? 'nil' : takenIn === total ? 'done' : 'todo';
+    return `<button class="part ${state} ${sel === s.id ? 'on' : ''} ${nowId === s.id ? 'now' : ''}"
+      data-act="med-part" data-slot="${s.id}">
+      <div class="pn">${s.title}</div>
+      <div class="pv">${state === 'nil' ? '—' : state === 'done' ? icon('check', 'ico s') : `${total - takenIn}`}</div>
+    </button>`;
+  }).join('');
+
+  let html = `<div class="row" style="align-items:baseline;margin-bottom:9px">
+    <div class="grow nm" style="font-size:13px;font-weight:750">${done ? 'Сегодня всё принято' : `Осталось ${d.left} ${plural(d.left, 'приём', 'приёма', 'приёмов')}`}</div>
+    <div class="sm">${d.taken} из ${d.total}</div>
+  </div>`;
+  html += `<div class="ribbon">${left}</div>`;
+
+  html += `<div class="divide"></div>`;
+  if (!cur || !cur.items.length) {
+    // «на ночь» уже содержит предлог — иначе выходило «На «на ночь»»
+    const s = MED.SLOTS.find(x => x.id === sel);
+    const when = !s ? 'на это время' : s.id === 'night' ? 'на ночь' : 'на ' + s.title.toLowerCase();
+    html += `<div class="sm" style="padding:5px 0 3px">${when[0].toUpperCase() + when.slice(1)} ничего не назначено.</div>`;
+  } else {
+    html += cur.items.map(i => medRow(i, sel, date)).join('');
+  }
+  return html;
+}
+
+/* Строка приёма: отметка слева, лекарство посередине. Стрелка здесь лишняя —
+   вся строка и так открывается, а знак «открывается» спорил бы с кружком. */
 function medRow(item, slotId, date) {
   const m = item.med;
   const p = MED.progressOf(m, date);
@@ -261,41 +292,51 @@ function medRow(item, slotId, date) {
       <div class="nm">${esc(m.name)}</div>
       <div class="sm">${sub || 'доза не указана — допиши'}</div>
     </div>
-    ${chevron()}
   </div>`;
 }
 
 /* ── архив внизу главной ─────────────────────────────────────────
-   Здесь же и добавление: раньше за новым документом надо было идти в шапку
-   или на другую вкладку, хотя место, где лежит архив, — самое очевидное,
-   куда человек тянется, чтобы этот архив пополнить. */
+   Один блок, а не россыпь: превью документов, строки добавления и
+   раскрытие «показать все» живут внутри одной карточки. Раньше архив
+   обещал тринадцать файлов, а показывал шесть, и дальше идти было некуда. */
 function archive(app, needsAttention) {
   const all = S.state.docs;
   let html = '';
   if (needsAttention) {
-    html += `<div class="card flat" style="padding:10px 13px"><div class="row">${icon('warning', 'ico s')}
-      <div class="grow"><div class="nm" style="font-size:13.5px">${needsAttention} ${plural(needsAttention, 'документ ждёт', 'документа ждут', 'документов ждут')} тебя</div>
-        <div class="sm">Нет даты, не прочитался или дубль</div></div>
-      <button class="mini" data-act="inbox">Открыть</button></div></div>`;
+    html += `<div class="grp"><div class="gi" data-act="inbox">
+      ${icon('warning', 'ico s')}
+      <div class="t">${needsAttention} ${plural(needsAttention, 'документ ждёт', 'документа ждут', 'документов ждут')} тебя</div>
+      <div class="v">нет даты или не прочитан</div>
+      ${chevron()}</div></div>`;
   }
 
   const addRows = `
-    <div class="gi add" data-act="scan">${icon('camera', 'ico s')}<div class="t">Снять бланк камерой</div>${chevron()}</div>
-    <div class="gi add" data-act="add">${icon('file', 'ico s')}<div class="t">Загрузить файл или PDF</div>${chevron()}</div>`;
+    <div class="gi" data-act="scan">${icon('camera', 'ico s')}<div class="t">Снять бланк камерой</div>${chevron()}</div>
+    <div class="gi" data-act="add">${icon('file', 'ico s')}<div class="t">Загрузить файл или PDF</div>${chevron()}</div>`;
 
   if (!all.length) {
-    return html + `<div class="cap">Архив</div><div class="grp">${addRows}</div>
-      <div class="sm" style="text-align:center;padding:2px 10px 6px">Анализы, снимки, выписки и назначения — всё хранится здесь</div>`;
+    return html + `<div class="cap">Архив</div>
+      <div class="grp">${addRows}</div>
+      <div class="sm" style="text-align:center;padding:0 10px 6px">Анализы, снимки, выписки и назначения — всё хранится здесь</div>`;
   }
 
-  const recent = [...all]
-    .sort((a, b) => (b.date || b.addedAt || '').localeCompare(a.date || a.addedAt || ''))
-    .slice(0, 6);
-  html += `<div class="cap">Архив · ${all.length} ${plural(all.length, 'файл', 'файла', 'файлов')}</div>`;
-  html += `<div class="grid">${recent.map(docTile).join('')}</div>`;
-  html += `<div class="grp">
-    ${addRows}
-    <div class="gi" data-act="tab" data-tab="timeline">${icon('calendar', 'ico s')}<div class="t">Все файлы по годам</div><div class="v">${all.length}</div>${chevron()}</div>
+  const open = !!app.archiveOpen;
+  const sorted = [...all].sort((a, b) => (b.date || b.addedAt || '').localeCompare(a.date || a.addedAt || ''));
+  const shown = open ? sorted : sorted.slice(0, 8);
+
+  html += `<div class="cap">Архив</div>
+  <div class="card" style="padding:12px 13px 4px">
+    <div class="row" style="align-items:baseline;margin-bottom:9px">
+      <div class="grow nm" style="font-size:13px;font-weight:750">${all.length} ${plural(all.length, 'файл', 'файла', 'файлов')}</div>
+      <div class="sm">${open ? 'все' : `последние ${shown.length}`}</div>
+    </div>
+    <div class="grid">${shown.map(docTile).join('')}</div>
+    <div class="glist">
+      ${all.length > 8 ? `<div class="gi" data-act="archive-toggle">${icon('package', 'ico s')}
+        <div class="t">${open ? 'Свернуть' : `Показать все ${all.length}`}</div>${chevron()}</div>` : ''}
+      ${addRows}
+      <div class="gi" data-act="tab" data-tab="timeline">${icon('calendar', 'ico s')}<div class="t">Хроника по годам</div>${chevron()}</div>
+    </div>
   </div>`;
   return html;
 }
@@ -335,6 +376,29 @@ export function markers(app) {
 
   const section = (title, arr) => arr.length ? `<div class="cap">${title} · ${arr.length}</div><div class="card list">${arr.map(row).join('')}</div>` : '';
   html += section('Требует внимания', attention);
+
+  /* Сдвиги переехали сюда с главной: там они были третьей порцией статистики
+     подряд, а здесь стоят среди своих — рядом с самими показателями. */
+  if (filter === 'all') {
+    const shifts = S.shifts(3);
+    if (shifts.length) {
+      html += `<div class="cap">Сдвинулось за год</div><div class="card list">`;
+      html += shifts.map(m => {
+        const dir = m.change > 0 ? '+' : '';
+        const tone = S.changeTone(m.key, m.base?.value, m.last.value, m.last.refLow, m.last.refHigh);
+        return `<div class="it" data-act="marker" data-key="${esc(m.key)}">
+          ${statusDot(m.status)}
+          <div class="grow"><div class="nm">${esc(m.title)}</div>
+            <div class="sm">было ${S.trim(m.base?.value ?? '—')} · норма ${esc(S.fmtRef(m.last))}</div></div>
+          ${sparkline(m.series, { w: 54, h: 22 })}
+          <div style="text-align:right;min-width:48px">
+            <div class="val" style="color:${inkTone(m.status)}">${S.trim(m.last.value)}</div>
+            <div class="delta ${tone}" style="display:block;margin-top:1px">${dir}${Math.round(m.change * 100)}%</div></div>
+        </div>`;
+      }).join('');
+      html += `</div>`;
+    }
+  }
   html += section('В норме', fine);
   html += section('Норма не указана', unknown);
   html += section('Давно не мерил', stale);
@@ -687,17 +751,25 @@ function docTile(d) {
     : busy ? `<div class="bdg wait">…</div>`
     : outCount ? `<div class="bdg">${outCount}</div>` : '';
 
-  return `<button class="tile" data-act="doc" data-id="${esc(d.id)}">
+  /* Подпись — только дата: название всё равно не помещается в 70 пикселей,
+     а сам документ узнаётся по своей же шапке на превью. Полное название
+     ждёт на экране документа. */
+  return `<button class="tile" data-act="doc" data-id="${esc(d.id)}" title="${esc(d.title || d.fileName || '')}">
     <div class="ph">
       ${shot ? `<img data-blob="${esc(shot)}" alt="" loading="lazy">` : icon(docIcon(d.type, d.isPdf), 'ico l')}
       ${badge}
-      ${pages > 1 ? `<div class="pg">${pages} стр.</div>` : ''}
+      ${pages > 1 ? `<div class="pg">${pages}</div>` : ''}
     </div>
-    <div class="meta">
-      <div class="t2">${esc(d.title || d.fileName || 'Документ')}</div>
-      <div class="d2">${d.date ? S.ruShort(d.date) : (busy ? 'читаю…' : 'без даты')}</div>
-    </div>
+    <div class="d2">${tileDate(d, busy)}</div>
   </button>`;
+}
+
+/* В семьдесят пикселей влезает только короткая дата; год добавляем,
+   лишь когда документ не этого года. */
+function tileDate(d, busy) {
+  if (!d.date) return busy ? '…' : 'без даты';
+  const [y, m, day] = d.date.split('-');
+  return `${day}.${m}${y === S.todayISO().slice(0, 4) ? '' : '.' + y.slice(2)}`;
 }
 
 function docIcon(type, isPdf) {
@@ -968,19 +1040,9 @@ export function medsView(app) {
   }
 
   if (plan.length) {
-    const nowId = MED.nowSlot(date)?.id;
-    html += `<div class="cap">Сегодня</div><div class="card" style="padding:6px 16px 12px">`;
-    html += plan.map(slot => {
-      const takenIn = slot.items.filter(i => i.taken).length;
-      return `<div class="slot${slot.id === nowId ? ' now' : ''}">
-        <div class="slot-h">
-          <div class="grow"><span class="t">${slot.title}</span> <span class="w">${slot.when}</span></div>
-          <span class="sm">${takenIn === slot.items.length ? 'всё принято' : `${takenIn} из ${slot.items.length}`}</span>
-        </div>
-        ${slot.items.map(i => medRow(i, slot.id, date)).join('')}
-      </div>`;
-    }).join('');
-    html += `</div>`;
+    // тот же блок, что на главной: расписание дня не должно выглядеть
+    // в двух местах по-разному
+    html += `<div class="cap">Сегодня</div><div class="card">${dayRibbon(app, date, plan, d)}</div>`;
   } else if (active.length) {
     html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
       <div class="grow sm">У активных курсов не указано время приёма — открой курс и поставь утро, день или вечер.</div></div></div>`;

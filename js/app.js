@@ -33,6 +33,8 @@ const app = {
   asking: false,
   obStep: 1,
   foodDate: null,
+  medSlot: null,      // выбранная часть дня в ленте приёма
+  archiveOpen: false, // архив на главной раскрыт целиком
 };
 window.__biolens = app;
 
@@ -275,6 +277,17 @@ async function handleAction(el) {
         if (db.settings().autoCloud) BK.scheduleCloudSave();
         back();
       }
+      break;
+    }
+    case 'med-part': {
+      // выбор части дня не должен дёргать экран — остаёмся на том же месте
+      app.medSlot = el.dataset.slot;
+      const pos = view.scrollTop; render(); $('#view').scrollTop = pos;
+      break;
+    }
+    case 'archive-toggle': {
+      app.archiveOpen = !app.archiveOpen;
+      const pos = view.scrollTop; render(); $('#view').scrollTop = pos;
       break;
     }
     case 'med-new': medSheet(null); break;

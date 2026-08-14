@@ -233,6 +233,11 @@ label.lab{display:block;font-size:12px;font-weight:700;color:var(--ink3);margin:
 .dock.mini .tab{flex:0 0 auto;padding:1px 13px}
 .dock.mini .tab span{max-height:0;max-width:0;opacity:0}
 .ico{width:21px;height:21px;display:block;fill:currentColor}
+/* Линейные знаки: тонкая галочка «открывается» и стрелка «назад».
+   Через класс `ico` они получали заливку и превращались в чёрные треугольники. */
+.chev{width:13px;height:13px;min-width:13px;display:block;fill:none;stroke:var(--ink4);
+  stroke-width:2;stroke-linecap:round;stroke-linejoin:round;opacity:.75}
+.chev.back{width:19px;height:19px;stroke:var(--ink);stroke-width:2.2;opacity:1}
 .ico.s{width:17px;height:17px}
 .ico.l{width:26px;height:26px}
 
@@ -263,30 +268,70 @@ label.lab{display:block;font-size:12px;font-weight:700;color:var(--ink3);margin:
    на главной лежат сами страницы, а не строчки текста про них.
    Плитки стоят прямо на холсте, без карточки-обёртки: лишняя рамка вокруг
    рамок только съедала ширину. */
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
-.tile{background:var(--surface);border-radius:14px;overflow:hidden;box-shadow:var(--shadow);border:none;padding:0;
-  cursor:pointer;font-family:inherit;text-align:left;display:block;width:100%;color:inherit}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:10px}
+/* Плитка внутри карточки: своей тени у неё нет — тень внутри тени читается
+   как грязь. Отделяет её от подложки тонкий контур самой страницы. */
+.tile{background:none;border:none;padding:0;cursor:pointer;font-family:inherit;text-align:center;display:block;
+  width:100%;color:inherit}
 .tile:active{transform:scale(0.97)}
 /* Подложка белая, как бумага: серая читалась бы как рамка вокруг листа.
    Показываем ВЕРХ страницы — там шапка с названием и лабораторией, по ним
    документ и узнают; низ бланка одинаков у всех. */
 .tile .ph{position:relative;aspect-ratio:3/4;background:#fff;display:flex;align-items:center;
-  justify-content:center;color:var(--ink4);box-shadow:inset 0 0 0 0.5px var(--hair)}
+  justify-content:center;color:var(--ink4);border-radius:9px;overflow:hidden;
+  box-shadow:0 1px 4px rgba(21,22,27,0.10), inset 0 0 0 0.5px var(--hair)}
 html[data-theme="dark"] .tile .ph{background:#F2F2F0}
 .tile .ph img{width:100%;height:100%;object-fit:cover;object-position:top center;display:block}
-.tile .meta{padding:6px 7px 7px}
-/* Место под две строки держим всегда: иначе соседние плитки в ряду разной
-   высоты, и низ сетки идёт лесенкой. */
-.tile .t2{font-size:11px;font-weight:650;letter-spacing:-0.1px;line-height:1.25;min-height:27px;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.tile .d2{font-size:10px;color:var(--ink4);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.tile .d2{font-size:10px;font-weight:600;color:var(--ink4);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* Число вне нормы — единственное, что горит цветом на плитке */
-.tile .bdg{position:absolute;top:5px;right:5px;min-width:19px;height:19px;padding:0 5px;border-radius:99px;
-  background:var(--bad-dot);color:#fff;font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center;
-  box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.tile .bdg{position:absolute;top:3px;right:3px;min-width:16px;height:16px;padding:0 4px;border-radius:99px;
+  background:var(--bad-dot);color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 1px 3px rgba(0,0,0,.22)}
 .tile .bdg.wait{background:var(--ink);color:var(--surface)}
-.tile .pg{position:absolute;left:5px;bottom:5px;padding:2px 6px;border-radius:99px;background:rgba(21,22,27,0.6);
-  color:#fff;font-size:9.5px;font-weight:700;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.tile .pg{position:absolute;left:3px;bottom:3px;padding:1px 5px;border-radius:99px;background:rgba(21,22,27,0.6);
+  color:#fff;font-size:9px;font-weight:700}
+
+/* ── доля состояний и положение в норме ──
+   Полоса вместо трёх крупных чисел и короткая шкала вместо слов «выше нормы»:
+   насколько выше — видно, а не додумывается. */
+.hbar{display:flex;height:7px;border-radius:99px;overflow:hidden;background:var(--hair);margin-top:9px}
+.hbar i{display:block;height:100%}
+.hbar i+i{box-shadow:inset 1px 0 0 var(--surface)}
+.att{cursor:pointer;padding:1px 0}
+.att:active{opacity:.65}
+.mrange{position:relative;height:14px;margin:5px 0 2px}
+.mrange:before{content:"";position:absolute;left:0;right:0;top:5px;height:4px;border-radius:99px;background:var(--hair)}
+.mrange .band{position:absolute;top:5px;height:4px;border-radius:99px;background:var(--band-line);opacity:.55}
+.mrange .pin{position:absolute;top:1px;width:4px;height:12px;border-radius:99px;transform:translateX(-2px);
+  box-shadow:0 0 0 2.5px var(--surface)}
+
+/* ── лента дня ──
+   Четыре части суток стоят всегда, даже пустые: иначе непонятно, куда делись
+   день и ночь. Цифра — сколько ещё принять, галочка — всё принято,
+   прочерк — на это время ничего не назначено. */
+.ribbon{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.part{background:var(--field);border:none;border-radius:12px;padding:8px 4px 7px;cursor:pointer;font-family:inherit;
+  display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--ink3);position:relative}
+.part:active{transform:scale(0.96)}
+.part .pn{font-size:10.5px;font-weight:650;letter-spacing:-0.1px}
+.part .pv{font-size:15px;font-weight:800;letter-spacing:-0.4px;color:var(--ink);height:19px;display:flex;align-items:center}
+.part .pv .ico{width:15px;height:15px}
+.part.nil{opacity:.5}
+.part.nil .pv{color:var(--ink4);font-weight:600}
+/* Выбранная часть дня всегда в полную силу — даже пустая: приглушённая
+   заливка чернилами превращалась в мутно-серое пятно. */
+.part.nil.on{opacity:1}
+.part.done .pv{color:var(--ok)}
+/* Выбранная часть залита чернилами; текущая помечена точкой под названием.
+   ⚠️Текст на ней — var(--surface), а не белый: в тёмной теме чернила почти
+   белые, и белым по белому не читалось ничего. */
+.part.on{background:var(--ink)}
+.part.on .pn{color:var(--surface);opacity:.7}
+.part.on .pv,.part.on.done .pv,.part.nil.on .pv{color:var(--surface)}
+.part.nil.on .pv{opacity:.6}
+.part.now:after{content:"";position:absolute;bottom:3px;width:3px;height:3px;border-radius:99px;background:var(--ink4)}
+.part.on.now:after{background:var(--surface);opacity:.65}
 
 /* ── миниатюры ── */
 .thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
@@ -355,12 +400,13 @@ html[data-theme="dark"] .tile .ph{background:#F2F2F0}
    Вместо трёх отдельных карточек во всю ширину — одна группа коротких строк.
    Так делает системный список настроек: меньше пустот, больше видно сразу. */
 .grp{background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow);margin-bottom:8px;padding:0 13px}
-.grp .gi{display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer;min-height:44px}
-.grp .gi+.gi{border-top:1px solid var(--hair)}
-.grp .gi:active{opacity:.6}
-.grp .gi .t{font-size:14px;font-weight:600;letter-spacing:-0.2px;flex:1;min-width:0}
-.grp .gi .v{font-size:12px;color:var(--ink3);white-space:nowrap}
-.grp .gi .ico{color:var(--ink3)}
+.grp .gi,.glist .gi{display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer;min-height:44px}
+.grp .gi+.gi,.glist .gi+.gi{border-top:1px solid var(--hair)}
+.glist .gi:first-child{border-top:1px solid var(--hair)}
+.grp .gi:active,.glist .gi:active{opacity:.6}
+.grp .gi .t,.glist .gi .t{font-size:14px;font-weight:600;letter-spacing:-0.2px;flex:1;min-width:0}
+.grp .gi .v,.glist .gi .v{font-size:12px;color:var(--ink3);white-space:nowrap}
+.grp .gi .ico,.glist .gi .ico{color:var(--ink3)}
 /* Значки в группе держим одним весом и одним серым: залитые чёрные
    перетягивали на себя внимание с самих строк. */
 .grp .gi.add .t{font-weight:660}
