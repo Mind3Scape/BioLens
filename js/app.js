@@ -67,9 +67,10 @@ function render() {
   else if (app.route === 'settings') html = V.settingsView(app);
 
   view.innerHTML = html;
-  /* Внутренние экраны подсвечивают вкладку, из которой они выросли: иначе
-     на карточке курса док гаснет весь, и непонятно, где ты находишься. */
-  const OWNER = { med: 'meds', marker: 'markers', meal: 'food', timeline: 'summary', doc: 'summary', inbox: 'summary', due: 'markers', doctor: 'summary' };
+  /* Подсвечиваем вкладку только там, где экран действительно ей принадлежит.
+     Хроника, документ и «для врача» ничьи — гореть «Здоровью», пока ты не там,
+     значит врать про своё же положение. */
+  const OWNER = { med: 'meds', marker: 'markers', meal: 'food' };
   $('#tabbar').innerHTML = s.onboarded ? V.tabbar(OWNER[app.route] || app.route) : '';
   // док пересобирается вместе с экраном — сжатое состояние надо вернуть на место
   if (dockMini) $('#dock')?.classList.add('mini');

@@ -108,7 +108,7 @@ export function summary(app) {
 
   html += archive(app, needsAttention);
 
-  html += `<div class="disc">Приложение показывает факты, хранит документы и напоминает о назначенном. Оно не ставит диагнозов и не назначает лечение.</div>`;
+  html += `<div class="disc">Приложение хранит факты и напоминает о назначенном. Диагнозов не ставит.</div>`;
   return html;
 }
 
@@ -257,10 +257,9 @@ function dayRibbon(app, date, plan, d) {
     </button>`;
   }).join('');
 
-  let html = `<div class="row" style="align-items:baseline;margin-bottom:9px">
-    <div class="grow nm" style="font-size:13px;font-weight:750">${done ? 'Сегодня всё принято' : `Осталось ${d.left} ${plural(d.left, 'приём', 'приёма', 'приёмов')}`}</div>
-    <div class="sm">${d.taken} из ${d.total}</div>
-  </div>`;
+  // «осталось 3» и «1 из 4» — одно и то же число двумя способами; хватает одного
+  let html = `<div class="nm" style="font-size:13px;font-weight:750;margin-bottom:9px">${
+    done ? 'Сегодня всё принято' : `Осталось ${d.left} ${plural(d.left, 'приём', 'приёма', 'приёмов')}`}</div>`;
   html += `<div class="ribbon">${left}</div>`;
 
   html += `<div class="divide"></div>`;
@@ -377,28 +376,6 @@ export function markers(app) {
   const section = (title, arr) => arr.length ? `<div class="cap">${title} · ${arr.length}</div><div class="card list">${arr.map(row).join('')}</div>` : '';
   html += section('Требует внимания', attention);
 
-  /* Сдвиги переехали сюда с главной: там они были третьей порцией статистики
-     подряд, а здесь стоят среди своих — рядом с самими показателями. */
-  if (filter === 'all') {
-    const shifts = S.shifts(3);
-    if (shifts.length) {
-      html += `<div class="cap">Сдвинулось за год</div><div class="card list">`;
-      html += shifts.map(m => {
-        const dir = m.change > 0 ? '+' : '';
-        const tone = S.changeTone(m.key, m.base?.value, m.last.value, m.last.refLow, m.last.refHigh);
-        return `<div class="it" data-act="marker" data-key="${esc(m.key)}">
-          ${statusDot(m.status)}
-          <div class="grow"><div class="nm">${esc(m.title)}</div>
-            <div class="sm">было ${S.trim(m.base?.value ?? '—')} · норма ${esc(S.fmtRef(m.last))}</div></div>
-          ${sparkline(m.series, { w: 54, h: 22 })}
-          <div style="text-align:right;min-width:48px">
-            <div class="val" style="color:${inkTone(m.status)}">${S.trim(m.last.value)}</div>
-            <div class="delta ${tone}" style="display:block;margin-top:1px">${dir}${Math.round(m.change * 100)}%</div></div>
-        </div>`;
-      }).join('');
-      html += `</div>`;
-    }
-  }
   html += section('В норме', fine);
   html += section('Норма не указана', unknown);
   html += section('Давно не мерил', stale);
@@ -723,7 +700,7 @@ function docRow(d, showBadge) {
     : parts.join(' · ');
 
   return `<div class="it" data-act="doc" data-id="${esc(d.id)}">
-    <div class="rnd" style="width:36px;height:36px;box-shadow:none;background:var(--field)">${icon(docIcon(d.type, d.isPdf), 'ico s')}</div>
+    <div style="width:20px;color:var(--ink4);display:flex;justify-content:center">${icon(docIcon(d.type, d.isPdf), 'ico s')}</div>
     <div class="grow"><div class="nm">${esc(d.title || d.fileName || 'Документ')}</div>
       <div class="sm">${esc(sub)}</div></div>
     ${showBadge && badge
@@ -800,8 +777,7 @@ export function docView(app) {
   if (pages.length) {
     html += `<div class="card" style="padding:12px">
       ${pages.map((b, i) => `<img class="shot-big" data-blob="${esc(b)}" alt="страница ${i + 1}" style="${i ? 'margin-top:8px' : ''}"/>`).join('')}
-      <div class="row" style="margin-top:10px"><div class="grow sm">${esc(doc.fileName || '')}${doc.isPdf ? ` · PDF, ${doc.pageCount || pages.length} ${plural(doc.pageCount || pages.length, 'страница', 'страницы', 'страниц')}` : ''} · оригинал хранится всегда</div>
-      <button class="mini warn" data-act="del-doc" data-id="${esc(doc.id)}">Удалить</button></div>
+      ${doc.isPdf ? `<div class="sm" style="margin-top:9px">PDF, ${doc.pageCount || pages.length} ${plural(doc.pageCount || pages.length, 'страница', 'страницы', 'страниц')}</div>` : ''}
       ${doc.pagesSkipped ? `<div class="sm" style="margin-top:8px">Разобрал первые ${pages.length} — остальные ${doc.pagesSkipped} пропустил, чтобы не тратить лишнего</div>` : ''}
       ${doc.pageErrors ? `<div class="sm" style="margin-top:8px;color:var(--bad)">Страницы ${doc.pageErrors.map(e => e.page).join(', ')} прочитать не вышло: ${esc(humanFail(doc.pageErrors[0].error))}</div>` : ''}
     </div>`;
@@ -919,21 +895,28 @@ export function docView(app) {
 
   if (ms.length) {
     html += `<div class="cap">Что распознано</div><div class="card list">`;
+    /* Тот же вид строки, что на «Показателях» и в сводке: точка, имя, норма,
+       число. Слово «в норме» зелёным жирным стояло рядом с зелёной точкой,
+       которая уже это сказала, — цвет работал вхолостую семь строк подряд. */
     html += ms.map(m => {
       const st = m.refLow != null || m.refHigh != null
         ? (m.value < (m.refLow ?? -Infinity) ? 'out' : m.value > (m.refHigh ?? Infinity) ? 'out' : 'ok') : 'unknown';
       return `<div class="it" data-act="marker" data-key="${esc(m.key)}">
         ${statusDot(st)}
         <div class="grow"><div class="nm">${esc(m.title)}</div>
-          <div class="sm">${m.refSource ? `норма ${esc(S.fmtRef(m))} (${m.refSource === 'типовая' ? 'общая для взрослых' : 'бланк'})` : 'норма не указана'}${st !== 'unknown' ? ` · <b style="color:${toneVar(st)}">${statusWord(st, m.value, m.refLow, m.refHigh)}</b>` : ''}</div></div>
-        <div class="val ${m.confidence < 0.75 ? 'doubt' : ''}">${S.trim(m.value)}<span class="unit">${esc(m.unit)}</span></div>
+          <div class="sm">${m.refSource ? `норма ${esc(S.fmtRef(m))}${m.refSource === 'типовая' ? ' (общая для взрослых)' : ''}` : 'норма не указана'}</div></div>
+        <div style="text-align:right;min-width:50px">
+          <div class="val ${m.confidence < 0.75 ? 'doubt' : ''}" style="color:${inkTone(st)}">${S.trim(m.value)}</div>
+          <div class="unit" style="display:block;margin:1px 0 0">${esc(m.unit)}</div>
+        </div>
       </div>`;
     }).join('');
     html += `</div>`;
   }
 
   if (doc.note) html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}<div class="grow sm">${esc(doc.note)}</div></div></div>`;
-  if (doc.model) html += `<div class="disc">Разобрано моделью ${esc(doc.model)}</div>`;
+  html += `<div class="grp"><div class="gi" data-act="del-doc" data-id="${esc(doc.id)}">${icon('trash', 'ico s')}
+    <div class="t" style="color:var(--bad)">Удалить документ</div>${chevron()}</div></div>`;
   return html;
 }
 
@@ -1003,7 +986,7 @@ export function medsView(app) {
   const active = MED.activeMeds(date);
 
   const addBtnMed = `<button class="rnd dark" data-act="med-new">${icon('plus', 'ico s')}</button>`;
-  let html = head('Лекарства', all.length ? `${dayTitle(date)} · ${d.taken} из ${d.total} принято` : dayTitle(date), avatarBtn + addBtnMed);
+  let html = head('Лекарства', dayTitle(date), avatarBtn + addBtnMed);
 
   if (!all.length) {
     return html + emptyBlock('pill', 'Назначения — сюда',
@@ -1013,15 +996,9 @@ export function medsView(app) {
       + `<div class="disc">Приложение только помнит назначенное врачом. Оно ничего не назначает и не отменяет.</div>`;
   }
 
-  /* Про непроверенное говорим одной строкой, а не вторым списком тех же
-     лекарств: ниже они и так стоят в расписании и в курсах, каждое со своей
-     пометкой. Два одинаковых перечня подряд читаются как ошибка. */
+  /* Про непроверенное здесь молчим: это написано в каждой строке курса ниже.
+     Одна мысль в одном месте — иначе экран превращается в напоминалку. */
   const check = MED.unconfirmed();
-  if (check.length) {
-    html += `<div class="card note" style="padding:10px 13px"><div class="row">${icon('warning', 'ico s')}
-      <div class="grow sm" style="line-height:1.45">Прочитано с документа, но не проверено${check.length > 1 ? ` · ${check.length}` : ''}.
-      Открой курс и сверь дозу с листом врача: ошибка в дозе опаснее пропуска.</div></div></div>`;
-  }
 
   const ask = MED.askMeds(date);
   if (ask.length) {
@@ -1063,10 +1040,11 @@ export function medsView(app) {
     html += `<div class="cap">Закончены · ${past.length}</div><div class="card list">${past.slice(0, 12).map(m => medCourseRow(m, date)).join('')}</div>`;
   }
 
-  html += `<button class="btn ghost" data-act="med-new">Добавить лекарство руками</button>`;
-  html += `<div class="card flat" style="margin-top:12px"><div class="row">${icon('bell', 'ico s')}
-    <div class="grow sm">Приложение <b>не звонит и не шлёт уведомлений</b>: оно живёт внутри Телеграма и не может будить телефон. Список ждёт тебя здесь — открой утром и вечером.</div></div></div>`;
-  html += `<div class="disc">Лечение назначает врач. BioLens только помнит назначенное и считает дни курса. Дозу, время и отмену обсуждай с врачом.</div>`;
+  html += `<div class="grp">
+    <div class="gi" data-act="med-new">${icon('plus', 'ico s')}<div class="t">Добавить лекарство руками</div>${chevron()}</div>
+    <div class="gi" data-act="add">${icon('camera', 'ico s')}<div class="t">Снять назначение врача</div>${chevron()}</div>
+  </div>`;
+  html += `<div class="disc">Приложение не звонит и не шлёт уведомлений — оно живёт внутри Телеграма. Лечение назначает врач: здесь оно только записано.</div>`;
   return html;
 }
 
@@ -1074,7 +1052,6 @@ function medCourseRow(m, date) {
   const st = MED.statusOf(m, date);
   const unchecked = m.source === 'ai' && !m.confirmed;
   return `<div class="it" data-act="med" data-id="${esc(m.id)}">
-    <span class="dot ${unchecked || st !== 'active' ? 'unknown' : ''}"></span>
     <div class="grow"><div class="nm">${esc(m.name)}${m.dose ? ` · ${esc(m.dose)}` : ''}</div>
       <div class="sm">${esc(MED.scheduleText(m))} · ${esc(MED.courseText(m, date))}${unchecked ? ' · не проверено' : ''}</div></div>
     ${chevron()}</div>`;
@@ -1093,23 +1070,21 @@ export function medDetail(app) {
   let html = backHead(m.name, [m.dose, m.form].filter(Boolean).join(' · ') || 'доза не указана');
 
   const stWord = { active: 'принимаешь сейчас', done: 'курс закончен', stopped: 'приём остановлен', later: 'ещё не начался', ask: 'нужно подтвердить' }[st];
+  /* «5 из 30», полоса и слово о состоянии — об одном и том же. Раньше здесь
+     стояли ещё и тег «активен», и подпись «принимаешь сейчас»: четыре способа
+     сказать одно. Осталось число, полоса под ним и одна строка словами.
+     Начало и окончание — одной строкой: это один отрезок, а не два факта. */
   html += `<div class="card">
-    <div class="row">
-      <div class="grow">
-        <div class="hero"><div class="big" style="font-size:34px">${p.total ? `${Math.max(1, Math.min(p.day, p.total))}<span style="font-size:18px;color:var(--ink3)"> / ${p.total}</span>` : '—'}</div></div>
-        <div class="sm" style="margin-top:6px">${p.total ? 'день курса' : 'срок окончания не указан'} · ${stWord}</div>
-      </div>
-      <!-- цвет в этом приложении означает состояние здоровья, а не ход курса -->
-      <span class="tag">${st === 'active' ? 'активен' : stWord}</span>
+    <div class="hero" style="align-items:baseline">
+      <div class="big" style="font-size:34px">${p.total ? `${Math.max(1, Math.min(p.day, p.total))}<span style="font-size:16px;font-weight:650;color:var(--ink3);margin-left:6px">из ${p.total}</span>` : '—'}</div>
+      <div class="grow sm" style="text-align:right">${p.total ? 'день курса' : stWord}</div>
     </div>
-    ${p.total ? `<div class="prog" style="margin-top:12px"><i style="width:${Math.max(2, Math.min(100, Math.round((p.day / p.total) * 100)))}%"></i></div>` : ''}
+    ${p.total ? `<div class="prog" style="margin-top:10px"><i style="width:${Math.max(2, Math.min(100, Math.round((p.day / p.total) * 100)))}%"></i></div>` : ''}
     <div class="divide"></div>
-    <div class="kv"><span class="k">Когда принимать</span><span class="v">${esc(MED.scheduleText(m))}</span></div>
-    ${m.freqText ? `<div class="kv"><span class="k">В назначении написано</span><span class="v">${esc(m.freqText)}</span></div>` : ''}
-    <div class="kv"><span class="k">Начало</span><span class="v">${m.startDate ? S.ruDate(m.startDate) : '—'}</span></div>
-    <div class="kv"><span class="k">Окончание</span><span class="v">${p.end ? S.ruDate(p.end) : 'не указано'}</span></div>
-    ${MED.foodText(m.food) ? `<div class="kv"><span class="k">Еда</span><span class="v">${MED.foodText(m.food)}</span></div>` : ''}
+    <div class="kv"><span class="k">Когда принимать</span><span class="v">${esc(MED.scheduleText(m))}${MED.foodText(m.food) ? ', ' + MED.foodText(m.food) : ''}</span></div>
+    <div class="kv"><span class="k">Срок</span><span class="v">${m.startDate ? S.ruShort(m.startDate) : '—'}${p.end ? ` – ${S.ruShort(p.end)}` : ' · без окончания'}</span></div>
     ${m.instructions ? `<div class="kv"><span class="k">Как принимать</span><span class="v">${esc(m.instructions)}</span></div>` : ''}
+    ${m.freqText ? `<div class="sm" style="margin-top:9px">В назначении написано: «${esc(m.freqText)}»</div>` : ''}
   </div>`;
 
   if (m.source === 'ai' && !m.confirmed) {
@@ -1119,7 +1094,6 @@ export function medDetail(app) {
       <div class="chips">
         <button class="chip on" data-act="med-ok" data-id="${esc(m.id)}">Всё верно</button>
         <button class="chip" data-act="med-edit" data-id="${esc(m.id)}">Исправить</button>
-        ${doc ? `<button class="chip" data-act="doc" data-id="${esc(doc.id)}">Открыть оригинал</button>` : ''}
       </div>
     </div>`;
   }
@@ -1129,23 +1103,6 @@ export function medDetail(app) {
       <div class="grow"><div class="nm" style="font-size:14px">${m.missing.includes('schedule') ? 'Не знаю, когда принимать' : 'Не знаю дозу'}</div>
         <div class="sm">В документе этого не было, а придумывать нельзя. Допиши — и курс встанет в расписание дня.</div></div></div>
       <button class="chip on" data-act="med-edit" data-id="${esc(m.id)}" style="margin-top:11px">Дописать</button></div>`;
-  }
-
-  /* Сегодняшние приёмы — прямо здесь, чтобы не возвращаться на главную */
-  const slots = (m.slots || []);
-  if (slots.length && st === 'active' && MED.isOnToday(m, date)) {
-    html += `<div class="cap">Сегодня</div><div class="card" style="padding:6px 16px 12px">
-      ${slots.map(id => {
-        const s = MED.SLOTS.find(x => x.id === id);
-        const intake = MED.intakeOf(m.id, date, id);
-        const taken = intake?.status === 'taken';
-        return `<div class="med-row${taken ? ' done' : ''}">
-          <button class="tick${taken ? ' on' : ''}" data-act="take" data-id="${esc(m.id)}" data-slot="${esc(id)}" data-date="${esc(date)}">${icon('check', 'ico s')}</button>
-          <div class="grow"><div class="nm">${s.title}</div>
-            <div class="sm">${taken ? `отмечено в ${new Date(intake.at).toTimeString().slice(0, 5)}` : `${s.when} · ${m.dose || 'доза не указана'}`}</div></div>
-        </div>`;
-      }).join('')}
-    </div>`;
   }
 
   const days = MED.recentDays(m, 14, date);
@@ -1169,17 +1126,15 @@ export function medDetail(app) {
       ${chevron()}</div></div>`;
   }
 
-  html += `<div class="card">
-    <div class="row" style="flex-wrap:wrap;gap:8px">
-      <button class="mini" data-act="med-edit" data-id="${esc(m.id)}">Изменить</button>
-      ${st === 'active' || st === 'ask'
-        ? `<button class="mini" data-act="med-stop" data-id="${esc(m.id)}">Закончил принимать</button>`
-        : `<button class="mini" data-act="med-resume" data-id="${esc(m.id)}">Снова принимаю</button>`}
-      <button class="mini warn" data-act="med-del" data-id="${esc(m.id)}">Удалить курс</button>
-    </div>
+  html += `<div class="grp">
+    <div class="gi" data-act="med-edit" data-id="${esc(m.id)}">${icon('note', 'ico s')}<div class="t">Изменить курс</div>${chevron()}</div>
+    ${st === 'active' || st === 'ask'
+      ? `<div class="gi" data-act="med-stop" data-id="${esc(m.id)}">${icon('check', 'ico s')}<div class="t">Закончил принимать</div>${chevron()}</div>`
+      : `<div class="gi" data-act="med-resume" data-id="${esc(m.id)}">${icon('recycle', 'ico s')}<div class="t">Снова принимаю</div>${chevron()}</div>`}
+    <div class="gi" data-act="med-del" data-id="${esc(m.id)}">${icon('trash', 'ico s')}<div class="t" style="color:var(--bad)">Удалить курс</div>${chevron()}</div>
   </div>`;
 
-  html += `<div class="disc">Это назначение врача, а не совет приложения. Дозу и срок меняет только врач — BioLens просто помнит и считает дни.</div>`;
+  html += `<div class="disc">Назначено врачом. Дозу и срок меняет только он.</div>`;
   return html;
 }
 
@@ -1262,7 +1217,7 @@ export function food(app) {
   const pending = S.state.meals.filter(m => m.status === 'reading');
   if (pending.length) html += `<div class="card"><div class="row"><div class="spin"></div><div class="grow sm">Смотрю тарелку…</div></div></div>`;
 
-  html += `<div class="disc">Оценка по фотографии приблизительная: вес порции виден не всегда. Это ориентир, а не точный подсчёт.</div>`;
+  html += `<div class="disc">Оценка по фотографии приблизительная — ориентир, а не подсчёт.</div>`;
   return html;
 }
 
@@ -1342,7 +1297,7 @@ export function due(app) {
       <div class="delta down">${Math.floor(m.overdue / 30)} мес.</div>
     </div>`).join('')}</div>`;
   html += `<button class="btn ghost" data-act="copy-due">Скопировать список для лаборатории</button>`;
-  html += `<div class="disc">Сроки — не медицинское назначение, а простое правило: раз в год для спокойных показателей, чаще для тех, что вышли за границу. Слово врача главнее.</div>`;
+  html += `<div class="disc">Сроки — простое правило, а не назначение: раз в год, чаще для того, что вышло за границу.</div>`;
   return html;
 }
 
@@ -1415,7 +1370,7 @@ export function doctor(app) {
   else if (db.settings().apiKey) html += `<div class="card flat"><button class="mini" data-act="doctor-questions">${icon('sparkle', 'ico s')} Собрать вопросы врачу</button></div>`;
 
   html += `<button class="btn" data-act="copy-doctor">Скопировать текстом</button>`;
-  html += `<div class="disc">Страница собрана из твоих документов. Это выжимка, а не медицинское заключение.</div>`;
+  html += `<div class="disc">Собрано из твоих документов. Это выжимка, а не заключение.</div>`;
   return html;
 }
 
@@ -1442,25 +1397,21 @@ export function settingsView(app) {
   <div class="card">
     <input type="password" id="apiKey" value="${esc(s.apiKey)}" placeholder="sk-or-v1-…" autocomplete="off">
     <div class="row" style="margin-top:10px">
-      <button class="mini" data-act="save-key">Сохранить</button>
-      <button class="mini" data-act="check-key">Проверить</button>
-      <div class="grow sm" id="keyState">${app.keyState ? esc(app.keyState) : (s.apiKey ? 'ключ сохранён в этом браузере' : 'ключа пока нет')}</div>
+      <button class="mini" data-act="check-key">Проверить и сохранить</button>
+      <div class="grow sm" id="keyState">${app.keyState ? esc(app.keyState) : (s.apiKey ? 'сохранён на этом устройстве' : 'ключа пока нет')}</div>
     </div>
     <div class="divide"></div>
-    <div class="sm" style="line-height:1.5">Ключ берётся на openrouter.ai → Keys. Он <b>хранится только здесь</b>, на этом устройстве, и уходит напрямую в OpenRouter.</div>
+    <div class="sm" style="line-height:1.5">Берётся на openrouter.ai → Keys. Хранится только здесь и уходит напрямую в OpenRouter.</div>
   </div>`;
 
   html += `<div class="cap">Модель</div>
   <div class="card">
-    <div class="row"><div class="grow"><div class="nm" style="font-size:14px">Разбор снимков</div>
-      <div class="sm">${s.modelVision ? esc(s.modelVision) : 'не выбрана — без неё бланки не читаются'}</div></div></div>
-    <div class="divide"></div>
-    <div class="row"><div class="grow"><div class="nm" style="font-size:14px">Тексты и вопросы</div>
-      <div class="sm">${s.modelChat ? esc(s.modelChat) : 'та же, что для снимков'}</div></div></div>
+    <div class="kv"><span class="k">Снимки</span><span class="v" style="font-size:12.5px;font-weight:600">${s.modelVision ? esc(s.modelVision) : 'не выбрана'}</span></div>
+    <div class="kv"><span class="k">Тексты</span><span class="v" style="font-size:12.5px;font-weight:600">${s.modelChat ? esc(s.modelChat) : 'та же'}</span></div>
     <div class="divide"></div>
     <div class="row">
       <button class="mini" data-act="refresh-models">${app.modelsLoading ? 'Обновляю…' : 'Обновить список'}</button>
-      <div class="grow sm">${models.length ? `${models.length} моделей · ${vision.length} умеют картинки` : 'список ещё не загружен'}</div>
+      <div class="grow sm">${models.length ? `${models.length} моделей · ${vision.length} с картинками` : 'список не загружен'}</div>
     </div>
   </div>`;
 
@@ -1520,21 +1471,13 @@ export function settingsView(app) {
     }
   }
 
-  const unread = S.state.docs.filter(d => d.status === 'ready').length;
-  html += `<div class="card flat">
-    <div class="row">${icon('recycle', 'ico s')}
-      <div class="grow"><div class="nm" style="font-size:14px">Переразобрать всё заново</div>
-        <div class="sm">${unread} документов пройдут через выбранную модель. Правки, сделанные руками, потеряются</div></div>
-      <button class="mini" data-act="reparse">Запустить</button></div>
-  </div>`;
-
-  // состояние берём из самих данных: флаг в app успевал устареть после автоочистки
+  // редкие действия — строками: карточка на каждое делала их громче ежедневного
   const demoOn = S.state.docs.some(d => d.demo);
-  html += `<div class="card flat">
-    <div class="row">${icon('sparkle', 'ico s')}
-      <div class="grow"><div class="nm" style="font-size:14px">Демонстрационный архив</div>
-        <div class="sm">${demoOn ? 'Сейчас в приложении есть демо-документы' : '12 документов за 10 лет — посмотреть, как всё выглядит с данными'}</div></div>
-      <button class="mini" data-act="${demoOn ? 'demo-clear' : 'demo-fill'}">${demoOn ? 'Убрать' : 'Показать'}</button></div>
+  html += `<div class="grp">
+    <div class="gi" data-act="reparse">${icon('recycle', 'ico s')}<div class="t">Переразобрать архив</div>
+      <div class="v">${S.state.docs.filter(d => d.status === 'ready').length} док.</div>${chevron()}</div>
+    <div class="gi" data-act="${demoOn ? 'demo-clear' : 'demo-fill'}">${icon('sparkle', 'ico s')}
+      <div class="t">Демонстрационный архив</div><div class="v">${demoOn ? 'убрать' : 'показать'}</div>${chevron()}</div>
   </div>`;
 
   html += `<div class="cap">Профиль</div>
@@ -1570,9 +1513,7 @@ export function settingsView(app) {
         <div class="sm">${u ? `Телеграм · id ${u.id}` : 'открыто в браузере, не в Телеграме'}</div></div>
     </div>
     <div class="divide"></div>
-    <div class="sm" style="line-height:1.6">
-      Отдельного пароля нет и не нужно: внутри Телеграма ты уже вошёл — приложение видит твой аккаунт и держит копию архива в <b>твоём</b> облаке Телеграма.
-    </div>
+    <div class="sm" style="line-height:1.55">Отдельного пароля нет: внутри Телеграма ты уже вошёл, и копия архива лежит в <b>твоём</b> облаке.</div>
   </div>`;
 
   html += `<div class="card">
@@ -1587,8 +1528,8 @@ export function settingsView(app) {
       <button class="tog ${s.autoCloud ? 'on' : ''}" data-act="toggle-cloud"></button></div>
     <div class="divide"></div>
     <div class="sm" style="line-height:1.6">
-      В облако уходят <b>числа, даты, лаборатории, назначенные лекарства и еда</b> — этого хватает, чтобы восстановить все линии и расписание приёма на новом телефоне.
-      <b>Снимки туда не помещаются</b> (лимит около 4 МБ), они остаются на устройстве. Хочешь сохранить и оригиналы — сделай копию файлом.
+      В облако уходят числа, даты, лаборатории, лекарства и еда — этого хватает, чтобы вернуть архив на новом телефоне.
+      <b>Снимки туда не помещаются</b> — для них копия файлом.
     </div>
     <div class="divide"></div>
     <div class="row" style="flex-wrap:wrap;gap:8px">
@@ -1624,8 +1565,8 @@ export function settingsView(app) {
 
   html += `<div class="card">
     <div class="sm" style="line-height:1.6">
-      <b>Что уходит наружу:</b> когда я разбираю снимок или отвечаю на вопрос, картинка и выжимка данных уходят в OpenRouter выбранной тобой модели — иначе разбора не будет. В остальное время данные не покидают устройство и твоё облако Телеграма.
-      <br><br><b>Про бесплатные модели:</b> у них другая политика — площадка вправе хранить запросы и использовать их для обучения. Это медицинские документы: если это важно, бери платную модель.
+      <b>Что уходит наружу:</b> при разборе снимка и при вопросе картинка и выжимка данных уходят в выбранную модель — иначе разбора не будет. В остальное время данные не покидают устройство.
+      <br><br>У <b>бесплатных</b> моделей другая политика: площадка вправе хранить запросы и учиться на них. Это медицинские документы — решай сам.
     </div>
     <div class="divide"></div>
     <div class="row" style="flex-wrap:wrap;gap:8px">
