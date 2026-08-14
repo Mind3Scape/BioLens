@@ -3,6 +3,7 @@
 
 import * as db from './db.js';
 import * as S from './store.js';
+import * as MED from './meds.js';
 import { defaultRef } from './markers.js';
 
 const LABS = ['Инвитро', 'Гемотест', 'поликлиника №4', 'KDL'];
@@ -94,8 +95,41 @@ export async function fillDemo() {
   const doubt = S.state.meas.find(m => m.key === 'glucose' && m.date === '2021-03-14');
   if (doubt) { doubt.confidence = 0.45; doubt.confirmed = false; await db.put('meas', doubt); }
 
+  /* Лист назначений — чтобы в примере было видно, как приём лекарств
+     раскладывается по утрам и вечерам сам, с фотографии. */
+  const rxStart = MED.addDays(S.todayISO(), -4);
+  const RX = [
+    { name: 'Урсосан', dose: '250 мг', form: 'капсула', slots: ['morning', 'evening'], durationDays: 30, food: 'after', freqText: '2 раза в день', instructions: 'запивать водой' },
+    { name: 'Витамин D3', dose: '5000 МЕ', form: 'капли', slots: ['morning'], durationDays: 60, food: 'with', freqText: '1 раз в день' },
+    { name: 'Омепразол', dose: '20 мг', form: 'капсула', slots: ['morning'], durationDays: 14, food: 'before', freqText: 'утром натощак' },
+  ];
+  {
+    const blobId = db.uid('b');
+    await db.putBlob(blobId, await svgBlob(paperSvg('Лист назначений', rxStart.split('-').reverse().join('.'), 'приём терапевта',
+      RX.map(r => [`${r.name} ${r.dose}`, `${r.freqText}, ${r.durationDays} дн.`]))));
+    const doc = {
+      id: db.uid('d'), blobId, fileName: 'демо-назначение.svg', addedAt: new Date().toISOString(),
+      status: 'ready', type: 'prescription', title: 'Лист назначений', date: rxStart, dateConfidence: 1,
+      lab: 'приём терапевта', conclusion: null, note: null, demo: true,
+      markersCount: 0, medsCount: RX.length, model: 'демо-данные',
+    };
+    await db.put('docs', doc);
+    S.state.docs.push(doc);
+    for (const r of RX) {
+      const med = await MED.saveMed({ ...r, docId: doc.id, startDate: rxStart, source: 'ai', confirmed: false, confidence: 0.9, demo: true });
+      // в примере часть приёмов уже отмечена — иначе не видно, как это выглядит
+      for (let back = 4; back >= 1; back--) {
+        const day = MED.addDays(S.todayISO(), -back);
+        for (const slot of med.slots) {
+          if (back === 2 && slot === 'evening') continue;      // один честный пропуск
+          await MED.mark(med.id, day, slot, 'taken');
+        }
+      }
+    }
+  }
+
   // пара блюд за сегодня
-  const today = new Date().toISOString().slice(0, 10);
+  const today = S.todayISO();
   const meals = [
     { title: 'Овсянка с ягодами и орехами', kcal: 420, protein_g: 12, fat_g: 14, sat_fat_g: 2.1, carbs_g: 58, sugar_g: 12, fiber_g: 9, cholesterol_mg: 0, sodium_mg: 140,
       items: [{ name: 'овсянка', grams: 220 }, { name: 'черника', grams: 60 }, { name: 'грецкий орех', grams: 20 }],

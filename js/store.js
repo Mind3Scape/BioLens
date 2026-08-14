@@ -5,6 +5,10 @@ import * as db from './db.js';
 import { matchMarker, toCanonical, defaultRef, markerTitle, markerUnit, markerGroup, statusOf, MARKERS, RCV, RECHECK, NO_RECHECK, UNIT_SPLIT } from './markers.js';
 import { analyzeDocument, analyzeMeal } from './openrouter.js';
 import { isPdf, pdfToImages } from './pdfdoc.js';
+import * as MED from './meds.js';
+/* Дата «сегодня» по местному времени живёт в meds.js — там она критична.
+   Отдаём её дальше отсюда, чтобы экраны не считали день по Гринвичу. */
+export { todayISO } from './meds.js';
 
 export const state = {
   docs: [], meas: [], meals: [],
@@ -16,7 +20,7 @@ export const state = {
 export function touch() { state.rev++; }
 
 export async function loadAll() {
-  const [docs, meas, meals] = await Promise.all([db.all('docs'), db.all('meas'), db.all('meals')]);
+  const [docs, meas, meals] = await Promise.all([db.all('docs'), db.all('meas'), db.all('meals'), MED.loadAll()]);
   state.docs = docs.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   state.meas = meas;
   state.meals = meals.sort((a, b) => (b.at || '').localeCompare(a.at || ''));
@@ -220,6 +224,7 @@ async function applyDocResult(doc, data, modelUsed, { trustPatient = false } = {
     await db.put('docs', doc);
     // старые числа обязаны уйти вместе со статусом, иначе экран говорит одно, а графики другое
     await clearMeasurements(doc.id);
+    await MED.clearForDoc(doc.id);
     return;
   }
 
@@ -255,13 +260,19 @@ async function applyDocResult(doc, data, modelUsed, { trustPatient = false } = {
   }
 
   doc.markersCount = (data.markers || []).length;
+  doc.medsCount = (data.meds || []).length;
   await db.put('docs', doc);
 
   // старые замеры этого документа стираем — перезалив должен быть чистым
   await clearMeasurements(doc.id);
 
   // дубль и чужой бланк в линии не попадают: числа остаются в документе, но не в графиках
-  if (['duplicate', 'foreign'].includes(doc.status)) return;
+  if (['duplicate', 'foreign'].includes(doc.status)) { await MED.clearForDoc(doc.id); return; }
+
+  /* Назначения ставим в расписание сразу: ради этого человек и фотографирует
+     лист назначений. Дубль и чужой бланк сюда не доходят — иначе одна и та же
+     таблетка удвоилась бы в утреннем списке. */
+  await MED.syncFromDoc(doc, data.meds);
 
   const sex = db.settings().sex;
   /* Два разных названия из ОДНОГО бланка не могут быть одним показателем.
@@ -348,8 +359,22 @@ function mergePages(pages) {
      Раньше всё получало дату первой страницы и вставало в график не туда. */
   const dates = [...new Set(good.map(p => p.date).filter(Boolean))];
   const conclusions = good.map(p => p.conclusion).filter(Boolean);
+  /* Лист назначений часто идёт двумя страницами, и одно и то же лекарство
+     повторяется в шапке продолжения. Считаем повтором совпадение названия
+     и дозы: две разные дозы одного вещества — это две строки схемы. */
+  const meds = [];
+  const medSeen = new Set();
+  for (const p of good) {
+    for (const m of (p.meds || [])) {
+      const k = `${(m.name || '').toLowerCase().trim()}|${(m.dose || '').toLowerCase().trim()}`;
+      if (!m.name || medSeen.has(k)) continue;
+      medSeen.add(k);
+      meds.push(m);
+    }
+  }
   return {
     is_medical: true,
+    meds,
     doc_type: first('doc_type') || 'other',
     title: mergedTitle(good) || first('title') || 'Документ',
     date: dates.length ? dates.slice().sort()[0] : (first('date') || null),
@@ -443,6 +468,11 @@ export async function setDocDate(docId, date) {
   const ms = await db.byIndex('meas', 'docId', docId);
   for (const m of ms) { m.date = date; await db.put('meas', m); }
   state.meas.forEach(m => { if (m.docId === docId) m.date = date; });
+  /* Назначение без прочитанной даты начинало курс «сегодня». Как только дата
+     появилась, курс обязан пересчитать начало и окончание — иначе «день 1 из 10»
+     врёт на столько дней, сколько бланк пролежал непрочитанным. Курсы, которые
+     человек уже правил руками, не трогаем: его слово главнее. */
+  await MED.rebaseByDoc(docId, date);
   touch();
 }
 
@@ -480,6 +510,8 @@ export async function deleteDoc(docId) {
   for (const b of blobs) await db.del('blobs', b);
   const ms = await db.byIndex('meas', 'docId', docId);
   for (const m of ms) await db.del('meas', m.id);
+  // назначения жили в этом документе — вместе с ним уходят и они
+  await MED.clearForDoc(docId);
   await db.del('docs', docId);
   state.docs = state.docs.filter(d => d.id !== docId);
   state.meas = state.meas.filter(m => m.docId !== docId);
@@ -688,7 +720,7 @@ export async function addMeal(file, { model } = {}) {
   const small = await db.shrinkImage(file, 1200, 0.82);
   await db.putBlob(blobId, small);
   const meal = {
-    id: db.uid('f'), blobId, at: new Date().toISOString(), date: new Date().toISOString().slice(0, 10),
+    id: db.uid('f'), blobId, at: new Date().toISOString(), date: MED.todayISO(),
     status: 'reading', title: null, nutrition: null, items: [], note: null,
   };
   await db.put('meals', meal);
@@ -780,13 +812,18 @@ export function buildContext({ maxMarkers = 120 } = {}) {
   if (total > maxMarkers) {
     lines.push(`(показаны ${maxMarkers} из ${total} — остальные есть в архиве, просто не поместились сюда)`);
   }
+  /* Лекарства идут сразу за показателями: разговор о печени или сахаре без
+     знания о том, что человек сейчас принимает, — разговор вслепую. */
+  const medText = MED.contextText();
+  if (medText) { lines.push(''); lines.push(medText); }
+
   const concl = state.docs.filter(d => d.conclusion).slice(0, 8);
   if (concl.length) {
     lines.push('');
     lines.push('ЗАКЛЮЧЕНИЯ И СНИМКИ:');
     for (const d of concl) lines.push(`- ${d.date || 'без даты'} · ${d.title}: ${String(d.conclusion).slice(0, 300)}`);
   }
-  const today = new Date().toISOString().slice(0, 10);
+  const today = MED.todayISO();
   const t = dayTotals(today);
   if (t.count) {
     lines.push('');

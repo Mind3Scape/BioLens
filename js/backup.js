@@ -9,6 +9,7 @@
 
 import * as db from './db.js';
 import * as S from './store.js';
+import * as MED from './meds.js';
 import * as TG from './telegram.js';
 
 const CHUNK = 3800;          // запас к лимиту Телеграма в 4096 символов на ключ
@@ -20,8 +21,10 @@ const keyOf = (i) => 'bk_' + i;
 
 function skeleton() {
   const s = db.settings();
+  const rx = MED.forBackup();
   return {
-    v: 1,
+    v: 2,             // 2 — в копии появились курсы лечения и отметки приёма
+    ...rx,
     at: new Date().toISOString(),
     uid: TG.tgUser()?.id || null,
     profile: { sex: s.sex, birthYear: s.birthYear, heightCm: s.heightCm, weightKg: s.weightKg },
@@ -64,7 +67,8 @@ function restoreSkeleton(data) {
     id: x.i, blobId: null, at: x.a, date: x.y, status: 'ready',
     title: x.t, nutrition: x.n, items: x.it || [], micros: x.mi || [], confidence: x.cf, imageLost: true,
   }));
-  return { docs, meas, meals };
+  const { meds, intakes } = MED.fromBackup(data);
+  return { docs, meas, meals, meds, intakes };
 }
 
 /* ── облако Телеграма ──────────────────────────────────────── */
@@ -94,7 +98,7 @@ export async function saveToCloud() {
   }
   const meta = {
     g: gen, n: chunks.length, at: data.at, len: json.length,
-    docs: data.docs.length, meas: data.meas.length, meals: data.meals.length,
+    docs: data.docs.length, meas: data.meas.length, meals: data.meals.length, meds: data.meds.length,
   };
   if (!await TG.cloudSet(KEY_META, JSON.stringify(meta))) {
     return { ok: false, reason: 'облако не приняло опись копии — прошлая копия цела' };
@@ -141,19 +145,23 @@ export async function loadFromCloud() {
 export async function restoreFromCloud() {
   const data = await loadFromCloud();
   if (!data) return { ok: false, reason: 'в облаке пусто' };
-  const { docs, meas, meals } = restoreSkeleton(data);
+  const { docs, meas, meals, meds, intakes } = restoreSkeleton(data);
 
   const haveDocs = new Set(S.state.docs.map(d => d.id));
   const haveMeas = new Set(S.state.meas.map(m => m.id));
   const haveMeals = new Set(S.state.meals.map(m => m.id));
+  const haveMeds = new Set(MED.state.meds.map(m => m.id));
+  const haveIntakes = new Set(MED.state.intakes.map(x => x.id));
 
   for (const d of docs) if (!haveDocs.has(d.id)) await db.put('docs', d);
   for (const m of meas) if (!haveMeas.has(m.id)) await db.put('meas', m);
   for (const m of meals) if (!haveMeals.has(m.id)) await db.put('meals', m);
+  for (const m of meds) if (!haveMeds.has(m.id)) await db.put('meds', m);
+  for (const x of intakes) if (!haveIntakes.has(x.id)) await db.put('intakes', x);
 
   if (data.profile) db.saveSettings(data.profile);
   await S.loadAll();
-  return { ok: true, docs: docs.length, meas: meas.length, meals: meals.length, at: data.at };
+  return { ok: true, docs: docs.length, meas: meas.length, meals: meals.length, meds: meds.length, at: data.at };
 }
 
 export async function forgetCloud() {
@@ -213,12 +221,14 @@ export async function importFile(file) {
   try { data = JSON.parse(text); } catch { return { ok: false, reason: 'файл не читается' }; }
   if (!data.meas && !data.docs) return { ok: false, reason: 'это не копия BioLens' };
 
-  const { docs, meas, meals } = restoreSkeleton(data);
+  const { docs, meas, meals, meds, intakes } = restoreSkeleton(data);
   const images = data.images || {};
 
   const haveDocs = new Set(S.state.docs.map(d => d.id));
   const haveMeas = new Set(S.state.meas.map(m => m.id));
   const haveMeals = new Set(S.state.meals.map(m => m.id));
+  const haveMeds = new Set(MED.state.meds.map(m => m.id));
+  const haveIntakes = new Set(MED.state.intakes.map(x => x.id));
 
   for (const d of docs) {
     if (haveDocs.has(d.id)) continue;
@@ -245,7 +255,9 @@ export async function importFile(file) {
     }
     await db.put('meals', m);
   }
+  for (const m of meds) if (!haveMeds.has(m.id)) await db.put('meds', m);
+  for (const x of intakes) if (!haveIntakes.has(x.id)) await db.put('intakes', x);
   if (data.profile) db.saveSettings(data.profile);
   await S.loadAll();
-  return { ok: true, docs: docs.length, meas: meas.length, meals: meals.length, withImages: !!data.images };
+  return { ok: true, docs: docs.length, meas: meas.length, meals: meals.length, meds: meds.length, withImages: !!data.images };
 }

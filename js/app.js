@@ -2,6 +2,7 @@
 
 import * as db from './db.js';
 import * as S from './store.js';
+import * as MED from './meds.js';
 import * as V from './views.js';
 import { $, $$, esc, toast, sheet, confirmSheet } from './ui.js';
 import { fetchModels, checkKey, summarize, askArchive, mealFeedback, chat, VOICE_RULES } from './openrouter.js';
@@ -35,7 +36,9 @@ const app = {
 };
 window.__biolens = app;
 
-const TABS = ['summary', 'markers', 'timeline', 'food', 'ask'];
+/* Хроника больше не вкладка: файлы лежат внизу главной, а сама хроника
+   открывается оттуда — значит, у неё должен быть путь назад. */
+const TABS = ['summary', 'meds', 'markers', 'food', 'ask'];
 
 /* ── рендер ──────────────────────────────────────────────────── */
 
@@ -50,6 +53,8 @@ function render() {
   else if (app.route === 'markers') html = V.markers(app);
   else if (app.route === 'marker') html = V.markerDetail(app);
   else if (app.route === 'timeline') html = V.timeline(app);
+  else if (app.route === 'meds') html = V.medsView(app);
+  else if (app.route === 'med') html = V.medDetail(app);
   else if (app.route === 'doc') html = V.docView(app);
   else if (app.route === 'inbox') html = V.inbox(app);
   else if (app.route === 'food') html = V.food(app);
@@ -60,9 +65,17 @@ function render() {
   else if (app.route === 'settings') html = V.settingsView(app);
 
   view.innerHTML = html;
-  $('#tabbar').innerHTML = s.onboarded ? V.tabbar(app.route) : '';
+  /* Внутренние экраны подсвечивают вкладку, из которой они выросли: иначе
+     на карточке курса док гаснет весь, и непонятно, где ты находишься. */
+  const OWNER = { med: 'meds', marker: 'markers', meal: 'food', timeline: 'summary', doc: 'summary', inbox: 'summary', due: 'markers', doctor: 'summary' };
+  $('#tabbar').innerHTML = s.onboarded ? V.tabbar(OWNER[app.route] || app.route) : '';
   TG.setBackButton(app.stack.length > 0);
   hydrateImages(view);
+
+  /* Выбранный фильтр может стоять за краем ленты — с шестью фильтрами в Хронике
+     человек нажимал «Назначения» и терял из виду, что он вообще выбран. */
+  const on = $('.segs.scroll .seg.on');
+  if (on) on.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 
   if (app.route === 'ask') {
     const inp = $('#askInput');
@@ -155,7 +168,7 @@ document.addEventListener('click', (e) => {
 async function handleAction(el) {
   const act = el.dataset.act;
   const view = $('#view');
-  TG.haptic(['wipe', 'del-doc', 'del-meal', 'reparse'].includes(act) ? 'warning' : 'light');
+  if (act !== 'take') TG.haptic(['wipe', 'del-doc', 'del-meal', 'reparse', 'med-del', 'med-stop'].includes(act) ? 'warning' : 'light');
 
   switch (act) {
     case 'back': back(); break;
@@ -176,6 +189,61 @@ async function handleAction(el) {
     case 'marker': go('marker', { key: el.dataset.key }); break;
     case 'doc': go('doc', { id: el.dataset.id }); break;
     case 'meal': go('meal', { id: el.dataset.id }); break;
+    case 'med': go('med', { id: el.dataset.id }); break;
+
+    /* ── лечение ── */
+    case 'take': {
+      /* Отметка приёма — самое частое действие в приложении и самое дешёвое
+         в откате: повторное нажатие снимает её. Ничего не спрашиваем. */
+      const rec = await MED.mark(el.dataset.id, el.dataset.date, el.dataset.slot);
+      TG.haptic(rec ? 'success' : 'light');
+      const pos = view.scrollTop; render(); $('#view').scrollTop = pos;
+      if (db.settings().autoCloud) BK.scheduleCloudSave();
+      break;
+    }
+    case 'med-ok': {
+      await MED.confirmMed(el.dataset.id);
+      toast('Принято — курс подтверждён');
+      const pos = view.scrollTop; render(); $('#view').scrollTop = pos;
+      if (db.settings().autoCloud) BK.scheduleCloudSave();
+      break;
+    }
+    case 'med-keep': {
+      await MED.keepTaking(el.dataset.id);
+      toast('Оставил в расписании');
+      render();
+      if (db.settings().autoCloud) BK.scheduleCloudSave();
+      break;
+    }
+    case 'med-stop': {
+      const m = MED.state.meds.find(x => x.id === el.dataset.id);
+      if (await confirmSheet('Закончил принимать?',
+        `${m?.name || 'Курс'} уйдёт из расписания дня. Сам курс и отметки приёма останутся в истории — вернуть можно одной кнопкой.`, 'Закончил')) {
+        await MED.setStatus(el.dataset.id, 'stopped');
+        toast('Убрал из расписания'); render();
+        if (db.settings().autoCloud) BK.scheduleCloudSave();
+      }
+      break;
+    }
+    case 'med-resume': {
+      await MED.setStatus(el.dataset.id, 'active');
+      toast('Вернул в расписание'); render();
+      if (db.settings().autoCloud) BK.scheduleCloudSave();
+      break;
+    }
+    case 'med-del': {
+      const m = MED.state.meds.find(x => x.id === el.dataset.id);
+      if (await confirmSheet('Удалить курс?',
+        `${m?.name || 'Курс'} и все отметки о его приёме исчезнут. Если ты просто закончил принимать — лучше «Закончил принимать»: история останется.`, 'Удалить', true)) {
+        await MED.removeMed(el.dataset.id);
+        toast('Удалено');
+        if (db.settings().autoCloud) BK.scheduleCloudSave();
+        back();
+      }
+      break;
+    }
+    case 'med-new': medSheet(null); break;
+    case 'med-edit': medSheet(el.dataset.id); break;
 
     case 'filter': app.markerFilter = el.dataset.group; render(); break;
     case 'dfilter': app.docFilter = el.dataset.kind; render(); break;
@@ -444,7 +512,11 @@ async function runQueue() {
     queueRunning = false;
   }
   if (db.settings().autoCloud) BK.scheduleCloudSave();
-  toast(errs ? `Готово, но ${errs} не прочитал` : 'Разобрал всё');
+  /* Про найденные назначения говорим отдельно: человек фотографировал лист
+     ради них, и они уже встали в расписание дня — это надо сказать вслух. */
+  const fresh = MED.unconfirmed().length;
+  if (fresh) toast(`Нашёл ${fresh} ${plural(fresh, 'назначение', 'назначения', 'назначений')} — проверь дозу и время`, 4200);
+  else toast(errs ? `Готово, но ${errs} не прочитал` : 'Разобрал всё');
   await refreshSummary(true);
   render();
 }
@@ -486,7 +558,7 @@ async function addMealFlow(useCamera) {
 
 async function foodFeedback() {
   const goal = S.foodGoal();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = S.todayISO();
   const text = S.dayFoodText(today);
   if (!S.mealsOn(today).length) { toast('Сегодня ещё нечего оценивать'); return; }
   try {
@@ -551,8 +623,14 @@ function doctorText() {
   const s = db.settings();
   const age = new Date().getFullYear() - (s.birthYear || 1990);
   const bad = S.markerList().filter(m => !m.stale && (m.status === 'out' || m.status === 'edge'));
+  /* Список лекарств идёт первым: на приёме об этом спрашивают раньше,
+     чем о цифрах, и текст в мессенджере должен отвечать на тот же вопрос,
+     что и экран. */
+  const taking = MED.state.meds.filter(m => ['active', 'ask'].includes(MED.statusOf(m)));
   const lines = [
     `${s.sex === 'f' ? 'Женщина' : 'Мужчина'}, ${age} лет, рост ${s.heightCm} см, вес ${s.weightKg} кг.`,
+    ...(taking.length ? ['', 'Принимаю сейчас:',
+      ...taking.map(m => `• ${m.name}${m.dose ? ` ${m.dose}` : ''} — ${MED.scheduleText(m)}${MED.progressOf(m).total ? `, ${MED.courseText(m)}` : ''}${m.docDate ? `, назначено ${S.ruShort(m.docDate)}` : ''}`)] : []),
     '',
     'Вне нормы сейчас:',
     ...(bad.length ? bad.map(m => `• ${m.title}: ${S.trim(m.last.value)} ${m.unit} (норма ${S.fmtRef(m.last)}), замер ${S.ruShort(m.last.date)}${m.count > 1 ? `, было ${S.trim(m.series[0].value)} в ${m.series[0].date.slice(0, 4)}` : ''}`) : ['• нет']),
@@ -614,13 +692,83 @@ function pickDate(docId) {
   const doc = S.state.docs.find(d => d.id === docId);
   const s = sheet(`<h2>Дата документа</h2>
     <p class="sm" style="margin:8px 0 14px">Дата забора или исследования — по ней показатель встанет в линию.</p>
-    <input type="date" id="dateInput" value="${doc?.fileDate || ''}" max="${new Date().toISOString().slice(0, 10)}">
+    <input type="date" id="dateInput" value="${doc?.fileDate || ''}" max="${S.todayISO()}">
     <button class="btn" data-ok style="margin-top:14px">Поставить</button>`);
   s.root.querySelector('[data-ok]').onclick = async () => {
     const v = s.root.querySelector('#dateInput').value;
-    if (v > new Date().toISOString().slice(0, 10)) { toast('Дата из будущего — так не бывает'); return; }
+    if (v > S.todayISO()) { toast('Дата из будущего — так не бывает'); return; }
     if (v) { await S.setDocDate(docId, v); toast('Дата поставлена'); }
     s.close(); render();
+  };
+}
+
+/* Ручной курс и правка распознанного — одна и та же форма.
+   Внутри шторки нарочно нет data-act: глобальный обработчик кликов ловит
+   только экраны, а не поля ввода. */
+function medSheet(id) {
+  const m = id ? MED.state.meds.find(x => x.id === id) : null;
+  const picked = new Set(m?.slots || []);
+  let food = m?.food || null;
+
+  const slotChips = () => MED.SLOTS.map(s =>
+    `<button class="chip ${picked.has(s.id) ? 'on' : ''}" data-slot-pick="${s.id}">${s.title}</button>`).join('');
+  const foodChips = () => [['before', 'До еды'], ['with', 'Во время'], ['after', 'После еды'], ['', 'Не важно']].map(([v, t]) =>
+    `<button class="chip ${(food || '') === v ? 'on' : ''}" data-food-pick="${v}">${t}</button>`).join('');
+
+  const s = sheet(`
+    <h2>${m ? 'Курс лечения' : 'Новое лекарство'}</h2>
+    <p class="sm" style="margin:8px 0 16px;line-height:1.5">Пиши ровно так, как назначил врач. Приложение ничего не подставляет само.</p>
+    <label class="lab">Название</label>
+    <input type="text" id="mName" value="${esc(m?.name || '')}" placeholder="Например, Аторвастатин" autocomplete="off">
+    <div class="row" style="gap:10px;margin-top:12px">
+      <div class="grow"><label class="lab">Разовая доза</label><input type="text" id="mDose" value="${esc(m?.dose || '')}" placeholder="10 мг"></div>
+      <div class="grow"><label class="lab">Сколько дней</label><input type="number" id="mDays" value="${m?.durationDays || ''}" placeholder="без срока" min="1" max="3650"></div>
+    </div>
+    <label class="lab" style="margin-top:14px">Когда принимать</label>
+    <div class="chips" id="mSlots">${slotChips()}</div>
+    <label class="lab" style="margin-top:14px">Еда</label>
+    <div class="chips" id="mFood">${foodChips()}</div>
+    <label class="lab" style="margin-top:14px">Начало курса</label>
+    <input type="date" id="mStart" value="${m?.startDate || S.todayISO()}">
+    <label class="lab" style="margin-top:14px">Как принимать (необязательно)</label>
+    <input type="text" id="mNote" value="${esc(m?.instructions || '')}" placeholder="запивать водой">
+    <button class="btn" data-save style="margin-top:16px">${m ? 'Сохранить' : 'Добавить'}</button>
+    <div class="disc">Курс на 10 дней закончится сам — я перестану напоминать и оставлю его в истории.</div>`);
+
+  s.root.querySelector('#mSlots').onclick = (e) => {
+    const b = e.target.closest('[data-slot-pick]'); if (!b) return;
+    const v = b.dataset.slotPick;
+    picked.has(v) ? picked.delete(v) : picked.add(v);
+    s.root.querySelector('#mSlots').innerHTML = slotChips();
+  };
+  s.root.querySelector('#mFood').onclick = (e) => {
+    const b = e.target.closest('[data-food-pick]'); if (!b) return;
+    food = b.dataset.foodPick || null;
+    s.root.querySelector('#mFood').innerHTML = foodChips();
+  };
+  s.root.querySelector('[data-save]').onclick = async () => {
+    const name = s.root.querySelector('#mName').value.trim();
+    if (!name) { toast('Без названия не сохраню'); return; }
+    const days = parseInt(s.root.querySelector('#mDays').value, 10);
+    const start = s.root.querySelector('#mStart').value || S.todayISO();
+    const saved = await MED.saveMed({
+      id: m?.id,
+      name,
+      dose: s.root.querySelector('#mDose').value.trim() || null,
+      slots: [...picked],
+      durationDays: isFinite(days) && days > 0 ? days : null,
+      endDate: isFinite(days) && days > 0 ? null : (m?.endDate || null),
+      startDate: start,
+      food,
+      instructions: s.root.querySelector('#mNote').value.trim() || null,
+      confirmed: true,          // человек написал это своими руками
+      askedOk: true,
+    });
+    s.close();
+    toast(m ? 'Сохранил' : `Добавил: ${saved.name}`);
+    if (!m) { app.route = 'med'; app.param = { id: saved.id }; app.stack.push({ route: 'meds', param: {} }); }
+    render();
+    if (db.settings().autoCloud) BK.scheduleCloudSave();
   };
 }
 

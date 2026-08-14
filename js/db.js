@@ -3,7 +3,7 @@
    Наружу уходит только то, что ты сам отправляешь в модель OpenRouter. */
 
 const DB_NAME = 'biolens';
-const DB_VER = 1;
+const DB_VER = 2;   // 2 — появились курсы лечения (meds) и отметки приёма (intakes)
 
 let _db = null;
 
@@ -39,9 +39,25 @@ export function open() {
       if (!db.objectStoreNames.contains('blobs')) {
         db.createObjectStore('blobs', { keyPath: 'id' });
       }
+      /* Лечение. Курс — что назначено, отметка — что человек принял.
+         Разными хранилищами: отметок за месяц набегает под сотню, и они
+         не должны переписываться вместе с курсом. */
+      if (!db.objectStoreNames.contains('meds')) {
+        const s = db.createObjectStore('meds', { keyPath: 'id' });
+        s.createIndex('docId', 'docId');
+        s.createIndex('status', 'status');
+      }
+      if (!db.objectStoreNames.contains('intakes')) {
+        const s = db.createObjectStore('intakes', { keyPath: 'id' });
+        s.createIndex('medId', 'medId');
+        s.createIndex('date', 'date');
+      }
     };
     rq.onsuccess = () => { _db = rq.result; res(_db); };
     rq.onerror = () => rej(rq.error);
+    /* Открытая в другой вкладке старая версия не даёт обновить схему.
+       Без этой ветки приложение молча висело бы на белом экране. */
+    rq.onblocked = () => rej(new Error('BioLens открыт в другой вкладке — закрой её и обнови эту'));
   });
 }
 
@@ -182,7 +198,8 @@ export function cacheModels(list) {
 /* ── выгрузка и полное удаление ──────────────────────────────── */
 
 export async function exportAll() {
-  const [docs, meas, meals] = await Promise.all([all('docs'), all('meas'), all('meals')]);
+  const [docs, meas, meals, meds, intakes] = await Promise.all(
+    [all('docs'), all('meas'), all('meals'), all('meds'), all('intakes')]);
   // ключ OpenRouter в выгрузку не кладём: файл человек может кому-то переслать
   const { apiKey, ...profile } = settings();
   return {
@@ -191,11 +208,12 @@ export async function exportAll() {
     docs: docs.map(d => ({ ...d })),
     measurements: meas,
     meals: meals.map(m => ({ ...m })),
+    meds, intakes,
   };
 }
 
 export async function wipeAll() {
-  await Promise.all(['docs', 'meas', 'meals', 'chat', 'blobs'].map(clearStore));
+  await Promise.all(['docs', 'meas', 'meals', 'chat', 'blobs', 'meds', 'intakes'].map(clearStore));
   localStorage.removeItem('biolens.models');
   localStorage.removeItem(SKEY);
 }

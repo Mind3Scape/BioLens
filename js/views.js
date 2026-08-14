@@ -3,6 +3,7 @@
 
 import * as S from './store.js';
 import * as db from './db.js';
+import * as MED from './meds.js';
 import { icon } from './icons.js';
 import { esc, sparkline, chart, statusDot, statusTag, statusWord, toneVar, inkTone, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale } from './ui.js';
 import { markerTitle, markerGroup, MARKERS } from './markers.js';
@@ -21,6 +22,16 @@ const backHead = (title, sub) => `
     <div class="grow"><h2>${esc(title)}</h2>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>
   </div>`;
 
+/* Шапка с кнопкой «назад» и местом под действия справа: Хроника перестала
+   быть вкладкой и открывается с главной, значит выход с неё должен быть виден
+   и в браузере, где системной кнопки «назад» нет. */
+const backHeadWide = (title, sub, right = '') => `
+  <div class="head">
+    <button class="rnd" data-act="back">${backIcon()}</button>
+    <div class="grow"><h1 style="font-size:23px">${esc(title)}</h1>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>
+    ${right}
+  </div>`;
+
 const backIcon = () => `<svg class="ico s" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="14.5,5 7.5,12 14.5,19"/></svg>`;
 
 /* Один знак «это открывается» на всё приложение. Раньше в правом углу карточек
@@ -34,19 +45,20 @@ const addBtn = `<button class="rnd dark" data-act="add">${icon('plus', 'ico s')}
 /* ══ СВОДКА ══════════════════════════════════════════════════ */
 
 export function summary(app) {
+  const today = S.todayISO();
   const ready = S.state.docs.filter(d => d.status === 'ready');
-  const span = S.yearsSpan();
   const queue = S.state.docs.filter(d => ['queued', 'reading'].includes(d.status)).length;
   const needsAttention = S.state.docs.filter(d => ['needs-date', 'error', 'skipped', 'duplicate', 'foreign', 'needs-file'].includes(d.status) || (d.status === 'ready' && d.pageErrors?.length)).length;
+  const plan = MED.planFor(today);
 
-  if (!ready.length && !queue && !needsAttention) {
+  if (!S.state.docs.length && !MED.state.meds.length) {
     return head('BioLens', '') + emptyBlock('camera', 'Начни с того, что есть',
-      'Закинь всё подряд — скриншоты анализов, фото бланков и <b>PDF из лаборатории</b>. Страницы PDF разберу по очереди прямо на телефоне. Даже <b>пять документов</b> уже дадут первую линию.',
-      `<button class="btn" data-act="add">${icon('camera', 'ico s')}Закинуть скриншоты</button>
-       <button class="btn ghost" data-act="scan" style="margin-top:10px">${icon('camera', 'ico s')}Снять бланк камерой</button>`);
+      'Закинь всё подряд — скриншоты анализов, фото бланков, <b>PDF из лаборатории</b> и <b>листы назначений</b>. Назначения сам разложу по утрам и вечерам, анализы сложу в линии по годам.',
+      `<button class="btn" data-act="add">${icon('camera', 'ico s')}Закинуть файлы</button>
+       <button class="btn ghost" data-act="scan" style="margin-top:10px">${icon('camera', 'ico s')}Снять камерой</button>`);
   }
 
-  let html = head('Сводка', span ? `${ready.length} документов · с ${S.ruDate(span.from)}` : `${ready.length} документов`, avatarBtn + addBtn);
+  let html = head('Здоровье', dayTitle(today), avatarBtn + addBtn);
 
   if (queue) {
     const done = S.state.queue.total ? S.state.queue.done : 0;
@@ -61,6 +73,9 @@ export function summary(app) {
     </div>`;
   }
 
+  html += dashboard(app);
+  html += medsToday(app, today, plan);
+
   if (app.aiSummary) {
     html += aiBlock('что изменилось', esc(app.aiSummary).replace(/\n/g, '<br>'),
       [`${ready.length} документов`, `${S.markerKeys().length} показателей`]);
@@ -69,35 +84,6 @@ export function summary(app) {
       <button class="mini" data-act="settings">Настройки</button></div></div>`;
   } else if (db.settings().apiKey && S.markerKeys().length) {
     html += `<div class="card"><div class="row"><div class="spin"></div><div class="grow sm">Смотрю, что изменилось…</div></div></div>`;
-  }
-
-  /* Главное на экране — что вне нормы прямо сейчас. Раньше сводка начиналась
-     с «сдвинулось за год», и человек с высоким холестерином видел проценты,
-     а не сам факт. */
-  const attention = S.attentionList();
-  if (attention.length) {
-    const shown = attention.slice(0, 4);
-    html += `<div class="cap">Требует внимания · ${attention.length}</div><div class="card list">`;
-    /* Та же строка, что на экране «Показатели»: точка, имя, пояснение, линия,
-       число с единицей. Раньше один и тот же показатель выглядел на двух
-       экранах по-разному — и приходилось каждый раз заново соображать, где что.
-       И одно состояние — один громкий сигнал: слово «выше нормы» объясняет,
-       а не кричит, поэтому стоит спокойным серым рядом с границами. */
-    html += shown.map(m => `<div class="it" data-act="marker" data-key="${esc(m.key)}">
-      ${statusDot(m.status)}
-      <div class="grow"><div class="nm">${esc(m.title)}</div>
-        <div class="sm">${statusWord(m.status, m.last.value, m.last.refLow, m.last.refHigh)} · норма ${esc(S.fmtRef(m.last))}</div></div>
-      ${sparkline(m.series, { w: 58, h: 24 })}
-      <div style="text-align:right;min-width:52px">
-        <div class="val" style="color:${inkTone(m.status)}">${S.trim(m.last.value)}</div>
-        <div class="unit" style="display:block;margin:1px 0 0">${esc(m.unit)}</div>
-      </div>
-    </div>`).join('');
-    if (attention.length > shown.length) {
-      html += `<div class="it" data-act="tab" data-tab="markers"><span class="dot unknown"></span>
-        <div class="grow sm">Ещё ${attention.length - shown.length} — открыть все показатели</div></div>`;
-    }
-    html += `</div>`;
   }
 
   const shifts = S.shifts(3);
@@ -130,16 +116,9 @@ export function summary(app) {
       ${chevron()}</div></div>`;
   }
 
-  if (needsAttention) {
-    html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
-      <div class="grow"><div class="nm" style="font-size:14px">${needsAttention} документов ждут тебя</div>
-        <div class="sm">Не разобрал дату, не смог прочитать или нашёл дубль</div></div>
-      <button class="mini" data-act="inbox">Открыть</button></div></div>`;
-  }
-
   const goal = S.foodGoal();
   if (goal) {
-    const t = S.dayTotals(new Date().toISOString().slice(0, 10));
+    const t = S.dayTotals(today);
     html += `<div class="card tap" data-act="tab" data-tab="food">
       <div class="row">${icon('forkknife', 'ico s')}
         <div class="grow"><div class="nm">Цель по питанию: ${esc(goal.goal)}</div>
@@ -151,13 +130,184 @@ export function summary(app) {
   html += `<div class="card tap" data-act="doctor">
     <div class="row">${icon('stethoscope', 'ico s')}
       <div class="grow"><div class="nm">Страница для врача</div>
-        <div class="sm">Вся картина за годы на один экран — вместо пакета бумаг</div></div>
+        <div class="sm">Вся картина за годы на один экран — вместе с тем, что принимаешь</div></div>
       ${chevron()}
     </div></div>`;
 
-  html += `<div class="disc">Приложение показывает факты и динамику, не ставит диагнозов и не назначает лечение.</div>`;
+  html += files(app, needsAttention);
+
+  html += `<div class="disc">Приложение показывает факты, хранит документы и напоминает о назначенном. Оно не ставит диагнозов и не назначает лечение.</div>`;
   return html;
 }
+
+/* ── дашборд состояния ───────────────────────────────────────────
+   Первое, что человек видит утром: сколько показателей сейчас вне нормы.
+   Три числа вместо абзаца — цвет здесь законный, это ровно то состояние,
+   ради которого светофор в приложении и заведён. */
+function dashboard(app) {
+  const list = S.markerList().filter(m => !m.stale);
+  if (!list.length) {
+    const anyDocs = S.state.docs.some(d => d.status === 'ready');
+    return `<div class="card flat"><div class="row">${icon('chartline', 'ico s')}
+      <div class="grow"><div class="nm" style="font-size:14px">${anyDocs ? 'Чисел пока нет' : 'Здесь будет твоё состояние'}</div>
+        <div class="sm">${anyDocs ? 'В разобранных документах не нашлось таблиц с показателями' : 'Закинь анализ — и увидишь, что в норме, а что нет'}</div></div>
+      <button class="mini" data-act="add">Добавить</button></div></div>`;
+  }
+  const out = list.filter(m => m.status === 'out').length;
+  const edge = list.filter(m => m.status === 'edge').length;
+  const ok = list.filter(m => m.status === 'ok').length;
+  const lastDate = list.map(m => m.last.date).filter(Boolean).sort().slice(-1)[0];
+  const attention = S.attentionList().slice(0, 3);
+
+  const tile = (n, label, cls) => `<button class="stat" data-act="tab" data-tab="markers">
+    <div class="n ${cls}">${n}</div><div class="l">${label}</div></button>`;
+
+  return `<div class="cap">Состояние</div>
+  <div class="card">
+    <div class="stats">
+      ${tile(out, 'вне нормы', 'c-out')}
+      ${tile(edge, 'у границы', 'c-edge')}
+      ${tile(ok, 'в норме', '')}
+    </div>
+    <div class="sm" style="margin-top:11px">${list.length} ${plural(list.length, 'показатель', 'показателя', 'показателей')} с историей${lastDate ? ` · последний бланк ${S.ruShort(lastDate)}` : ''}</div>
+    ${attention.length ? `<div class="divide"></div><div class="list">${attention.map(m => `
+      <div class="it" data-act="marker" data-key="${esc(m.key)}">
+        ${statusDot(m.status)}
+        <div class="grow"><div class="nm">${esc(m.title)}</div>
+          <div class="sm">${statusWord(m.status, m.last.value, m.last.refLow, m.last.refHigh)} · норма ${esc(S.fmtRef(m.last))}</div></div>
+        ${sparkline(m.series, { w: 58, h: 24 })}
+        <div style="text-align:right;min-width:52px">
+          <div class="val" style="color:${inkTone(m.status)}">${S.trim(m.last.value)}</div>
+          <div class="unit" style="display:block;margin:1px 0 0">${esc(m.unit)}</div>
+        </div>
+      </div>`).join('')}</div>` : ''}
+  </div>`;
+}
+
+/* ── приём лекарств на сегодня ──────────────────────────────────
+   Утро, день, вечер и «на ночь» — ровно так, как их пишут в назначениях.
+   Отметка одна на приём, повторное нажатие её снимает: ошибиться пальцем
+   в списке лекарств человек имеет право. */
+function medsToday(app, date, plan) {
+  const meds = MED.state.meds;
+  if (!meds.length) {
+    return `<div class="cap">Приём лекарств</div>
+    <div class="card flat tap" data-act="tab" data-tab="meds"><div class="row">${icon('pill', 'ico s')}
+      <div class="grow"><div class="nm" style="font-size:14px">Сфотографируй назначение врача</div>
+        <div class="sm">Прочитаю, что и сколько дней принимать, и разложу по утрам и вечерам</div></div>
+      ${chevron()}</div></div>`;
+  }
+
+  let html = '';
+  const check = MED.unconfirmed();
+  if (check.length) {
+    html += `<div class="card note tap" data-act="tab" data-tab="meds">
+      <div class="row">${icon('warning', 'ico s')}
+        <div class="grow"><div class="nm" style="font-size:14px">Проверь ${check.length === 1 ? 'назначение' : `назначения · ${check.length}`}</div>
+          <div class="sm">${check.slice(0, 3).map(m => esc(m.name)).join(', ')} — сверь дозу и время с листом врача</div></div>
+        ${chevron()}</div></div>`;
+  }
+
+  const ask = MED.askMeds(date);
+  if (ask.length) {
+    html += `<div class="card note">
+      <div class="row">${icon('clock', 'ico s')}<div class="grow"><div class="nm" style="font-size:14px">Ты ещё принимаешь ${esc(ask[0].name)}?</div>
+        <div class="sm">Назначено ${ask[0].docDate ? S.ruDate(ask[0].docDate) : 'давно'}, срок окончания не был указан — в расписание не ставлю, пока не скажешь</div></div></div>
+      <div class="chips" style="margin-top:11px">
+        <button class="chip on" data-act="med-keep" data-id="${esc(ask[0].id)}">Принимаю</button>
+        <button class="chip" data-act="med-stop" data-id="${esc(ask[0].id)}">Уже закончил</button>
+        <button class="chip" data-act="med" data-id="${esc(ask[0].id)}">Открыть курс</button>
+      </div>
+      ${ask.length > 1 ? `<div class="sm" style="margin-top:10px">И ещё ${ask.length - 1} ${plural(ask.length - 1, 'курс ждёт', 'курса ждут', 'курсов ждут')} ответа — на вкладке «Лекарства»</div>` : ''}
+    </div>`;
+  }
+
+  const d = MED.dayCount(date);
+  if (!plan.length) {
+    const act = MED.activeMeds(date).length;
+    html += `<div class="cap">Приём лекарств</div>
+    <div class="card flat tap" data-act="tab" data-tab="meds"><div class="row">${icon('pill', 'ico s')}
+      <div class="grow"><div class="nm" style="font-size:14px">${act ? 'На сегодня приёмов нет' : 'Сейчас курсов нет'}</div>
+        <div class="sm">${act ? 'У активных курсов не указано время приёма — открой и поставь' : 'Все курсы закончены. Новый появится с назначения врача'}</div></div>
+      ${chevron()}</div></div>`;
+    return html;
+  }
+
+  const nowId = MED.nowSlot(date)?.id;
+  html += `<div class="cap">Приём лекарств · ${d.taken} из ${d.total}</div>`;
+  html += `<div class="card" style="padding:6px 16px 12px">`;
+  html += plan.map(slot => {
+    const takenIn = slot.items.filter(i => i.taken).length;
+    const isNow = slot.id === nowId;
+    return `<div class="slot${isNow ? ' now' : ''}">
+      <div class="slot-h">
+        <div class="grow"><span class="t">${slot.title}</span><span class="w">${slot.when}</span></div>
+        <span class="sm">${takenIn === slot.items.length ? 'всё принято' : `${takenIn} из ${slot.items.length}`}</span>
+      </div>
+      ${slot.items.map(i => medRow(i, slot.id, date)).join('')}
+    </div>`;
+  }).join('');
+  html += `</div>`;
+  return html;
+}
+
+/* Строка приёма: отметка слева, лекарство посередине, вход в курс справа.
+   Нажатие на кружок отмечает приём, нажатие на строку открывает курс. */
+function medRow(item, slotId, date) {
+  const m = item.med;
+  const p = MED.progressOf(m, date);
+  const sub = [
+    m.dose ? esc(m.dose) : null,
+    MED.foodText(m.food),
+    p.total ? `день ${Math.max(1, p.day)} из ${p.total}` : null,
+  ].filter(Boolean).join(' · ');
+  return `<div class="med-row${item.taken ? ' done' : ''}" data-act="med" data-id="${esc(m.id)}">
+    <button class="tick${item.taken ? ' on' : ''}" data-act="take" data-id="${esc(m.id)}" data-slot="${esc(slotId)}" data-date="${esc(date)}"
+      aria-label="${item.taken ? 'Отменить отметку' : 'Отметить приём'}">${icon('check', 'ico s')}</button>
+    <div class="grow">
+      <div class="nm">${esc(m.name)}</div>
+      <div class="sm">${sub || 'доза не указана — допиши'}</div>
+    </div>
+    ${chevron()}
+  </div>`;
+}
+
+/* ── файлы внизу главной ─────────────────────────────────────────
+   Раньше за своими же документами надо было идти на отдельную вкладку.
+   Теперь последние файлы лежат под рукой, а вся хроника — в одном нажатии. */
+function files(app, needsAttention) {
+  const all = S.state.docs;
+  let html = '';
+  if (needsAttention) {
+    html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
+      <div class="grow"><div class="nm" style="font-size:14px">${needsAttention} ${plural(needsAttention, 'документ ждёт', 'документа ждут', 'документов ждут')} тебя</div>
+        <div class="sm">Не разобрал дату, не смог прочитать или нашёл дубль</div></div>
+      <button class="mini" data-act="inbox">Открыть</button></div></div>`;
+  }
+  if (!all.length) {
+    return html + `<div class="cap">Файлы</div>
+    <div class="card flat tap" data-act="add"><div class="row">${icon('file', 'ico s')}
+      <div class="grow"><div class="nm" style="font-size:14px">Файлов пока нет</div>
+        <div class="sm">Анализы, снимки, выписки и назначения — всё хранится здесь</div></div>
+      ${chevron()}</div></div>`;
+  }
+  const recent = [...all]
+    .sort((a, b) => (b.date || b.addedAt || '').localeCompare(a.date || a.addedAt || ''))
+    .slice(0, 6);
+  html += `<div class="cap">Файлы · ${all.length}</div>`;
+  html += `<div class="card list">${recent.map(d => docRow(d, d.status !== 'ready')).join('')}</div>`;
+  html += `<div class="row" style="gap:8px;margin-bottom:12px">
+    <button class="btn sm ghost" data-act="tab" data-tab="timeline" style="flex:1">Все файлы по годам</button>
+    <button class="btn sm ghost" data-act="add" style="flex:1">Добавить</button>
+  </div>`;
+  return html;
+}
+
+const WEEKDAYS = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
+const dayTitle = (iso) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return `${WEEKDAYS[new Date(y, m - 1, d).getDay()]}, ${S.ruDayMonth(iso)}`;
+};
 
 /* ══ ПОКАЗАТЕЛИ ══════════════════════════════════════════════ */
 
@@ -396,19 +546,20 @@ export function markerDetail(app) {
 export function timeline(app) {
   const all = S.state.docs;
   if (!all.length) {
-    return head('Хроника', '') + emptyBlock('calendar', 'Здесь будет твоя история',
+    return backHeadWide('Хроника', '') + emptyBlock('calendar', 'Здесь будет твоя история',
       'Анализы, снимки, заключения врачей и PDF из лаборатории — всё по годам, в одном месте.',
       `<button class="btn" data-act="add">Закинуть документы</button>`);
   }
 
   const filter = app.docFilter || 'all';
-  const kinds = { all: 'Всё', blood: 'Анализы', imaging: 'Снимки', conclusion: 'Заключения', other: 'Другое' };
+  const kinds = { all: 'Всё', blood: 'Анализы', imaging: 'Снимки', conclusion: 'Заключения', prescription: 'Назначения', other: 'Другое' };
   const inKind = (d) => {
     if (filter === 'all') return true;
     if (filter === 'blood') return ['blood', 'urine'].includes(d.type);
     if (filter === 'imaging') return d.type === 'imaging';
     if (filter === 'conclusion') return d.type === 'conclusion';
-    return !['blood', 'urine', 'imaging', 'conclusion'].includes(d.type);   // «Другое» ловит всё остальное
+    if (filter === 'prescription') return d.type === 'prescription';
+    return !['blood', 'urine', 'imaging', 'conclusion', 'prescription'].includes(d.type);   // «Другое» ловит всё остальное
   };
   const shown = all.filter(inKind);
 
@@ -418,7 +569,7 @@ export function timeline(app) {
 
   // «разобрано 12 из 12» — новость только тогда, когда что-то ещё не разобрано
   const ready = all.filter(d => d.status === 'ready').length;
-  let html = head('Хроника', `${all.length} ${plural(all.length, 'файл', 'файла', 'файлов')}${ready < all.length ? ` · разобрано ${ready}` : ''}`, avatarBtn + addBtn);
+  let html = backHeadWide('Хроника', `${all.length} ${plural(all.length, 'файл', 'файла', 'файлов')}${ready < all.length ? ` · разобрано ${ready}` : ''}`, avatarBtn + addBtn);
   html += `<div class="segs scroll">${Object.entries(kinds).map(([k, t]) =>
     `<button class="seg ${filter === k ? 'on' : ''}" data-act="dfilter" data-kind="${k}">${esc(t)}</button>`).join('')}</div>`;
 
@@ -498,10 +649,12 @@ function docRow(d, showBadge) {
   const known = ms.filter(m => m.refLow != null || m.refHigh != null);
   const outCount = known.filter(m => (m.refLow != null && m.value < m.refLow) || (m.refHigh != null && m.value > m.refHigh)).length;
   const badge = STATUS_BADGE[d.status];
+  const rx = MED.state.meds.filter(m => m.docId === d.id).length;
   const parts = [
     d.date ? S.ruDayMonth(d.date) : (badge ? null : 'дата не разобрана'),
     d.lab,
     ms.length ? `${ms.length} ${plural(ms.length, 'показатель', 'показателя', 'показателей')}` : null,
+    rx ? `${rx} ${plural(rx, 'лекарство', 'лекарства', 'лекарств')}` : null,
     d.isPdf ? `PDF · ${d.pageCount || (d.pages || []).length} ${plural(d.pageCount || 1, 'страница', 'страницы', 'страниц')}` : null,
   ].filter(Boolean);
   const sub = showBadge && badge
@@ -521,7 +674,7 @@ function docRow(d, showBadge) {
 }
 
 function docIcon(type, isPdf) {
-  const byType = { blood: 'drop', urine: 'drop', imaging: 'waves', conclusion: 'stethoscope', vaccination: 'firstaid' }[type];
+  const byType = { blood: 'drop', urine: 'drop', imaging: 'waves', conclusion: 'stethoscope', prescription: 'pill', vaccination: 'firstaid' }[type];
   return byType || (isPdf ? 'file' : 'file');
 }
 
@@ -638,6 +791,21 @@ export function docView(app) {
       <div class="sm" style="font-size:14px;line-height:1.55;color:var(--ink)">${esc(doc.conclusion)}</div></div>`;
   }
 
+  /* Назначения из этого документа — рядом со снимком, чтобы сверять глазами,
+     не уходя с экрана: доза читается с оригинала выше. */
+  const rx = MED.state.meds.filter(m => m.docId === doc.id);
+  if (rx.length) {
+    const today = S.todayISO();
+    html += `<div class="cap">Назначено · ${rx.length}</div><div class="card list">`;
+    html += rx.map(m => `<div class="it" data-act="med" data-id="${esc(m.id)}">
+      ${icon('pill', 'ico s')}
+      <div class="grow"><div class="nm">${esc(m.name)}${m.dose ? ` · ${esc(m.dose)}` : ''}</div>
+        <div class="sm">${esc(MED.scheduleText(m))} · ${esc(MED.courseText(m, today))}${!m.confirmed ? ' · не проверено' : ''}</div></div>
+      ${chevron()}</div>`).join('');
+    html += `</div>`;
+    html += `<div class="sm" style="margin:-4px 4px 14px;line-height:1.5">Сверь дозу и частоту с оригиналом выше — я мог прочитать почерк неверно. Приёмы уже стоят в расписании дня.</div>`;
+  }
+
   if (doubts.length) {
     html += `<div class="card note">
       <div class="row">${icon('eye', 'ico s')}<div class="grow"><div class="nm" style="font-size:14px">${doubts.length === 1 ? 'Одно число прочитал неуверенно' : `${doubts.length} чисел прочитал неуверенно`}</div>
@@ -726,10 +894,210 @@ export function inbox(app) {
   return html;
 }
 
+/* ══ ЛЕКАРСТВА ═══════════════════════════════════════════════ */
+
+export function medsView(app) {
+  const date = S.todayISO();
+  const all = MED.state.meds;
+  const plan = MED.planFor(date);
+  const d = MED.dayCount(date);
+  const active = MED.activeMeds(date);
+
+  const addBtnMed = `<button class="rnd dark" data-act="med-new">${icon('plus', 'ico s')}</button>`;
+  let html = head('Лекарства', all.length ? `${dayTitle(date)} · ${d.taken} из ${d.total} принято` : dayTitle(date), avatarBtn + addBtnMed);
+
+  if (!all.length) {
+    return html + emptyBlock('pill', 'Назначения — сюда',
+      'Сфотографируй рецепт, лист назначений или выписку. Прочитаю <b>что, сколько раз в день и сколько дней</b> принимать — и разложу по утрам, дням и вечерам.',
+      `<button class="btn" data-act="add">${icon('camera', 'ico s')}Снять назначение</button>
+       <button class="btn ghost" data-act="med-new" style="margin-top:10px">Добавить лекарство руками</button>`)
+      + `<div class="disc">Приложение только помнит назначенное врачом. Оно ничего не назначает и не отменяет.</div>`;
+  }
+
+  /* Про непроверенное говорим одной строкой, а не вторым списком тех же
+     лекарств: ниже они и так стоят в расписании и в курсах, каждое со своей
+     пометкой. Два одинаковых перечня подряд читаются как ошибка. */
+  const check = MED.unconfirmed();
+  if (check.length) {
+    html += `<div class="card note"><div class="row">${icon('warning', 'ico s')}
+      <div class="grow sm" style="line-height:1.5">${check.length === 1 ? 'Одно назначение прочитано' : `${check.length} назначения прочитаны`} с документа и ещё не проверены.
+      Открой курс, сверь дозу и время с листом врача и нажми «Всё верно» — ошибка в дозе опаснее пропуска.</div></div></div>`;
+  }
+
+  const ask = MED.askMeds(date);
+  if (ask.length) {
+    html += `<div class="cap">Ещё принимаешь? · ${ask.length}</div>`;
+    for (const m of ask) {
+      html += `<div class="card note">
+        <div class="row">${icon('clock', 'ico s')}
+          <div class="grow"><div class="nm" style="font-size:14px">${esc(m.name)}${m.dose ? ` · ${esc(m.dose)}` : ''}</div>
+            <div class="sm">Назначено ${m.docDate ? S.ruDate(m.docDate) : 'давно'}, срок не указан. В расписание не ставлю, пока не ответишь</div></div></div>
+        <div class="chips" style="margin-top:11px">
+          <button class="chip on" data-act="med-keep" data-id="${esc(m.id)}">Принимаю</button>
+          <button class="chip" data-act="med-stop" data-id="${esc(m.id)}">Закончил</button>
+          <button class="chip" data-act="med" data-id="${esc(m.id)}">Открыть</button>
+        </div></div>`;
+    }
+  }
+
+  if (plan.length) {
+    const nowId = MED.nowSlot(date)?.id;
+    html += `<div class="cap">Сегодня</div><div class="card" style="padding:6px 16px 12px">`;
+    html += plan.map(slot => {
+      const takenIn = slot.items.filter(i => i.taken).length;
+      return `<div class="slot${slot.id === nowId ? ' now' : ''}">
+        <div class="slot-h">
+          <div class="grow"><span class="t">${slot.title}</span><span class="w">${slot.when}</span></div>
+          <span class="sm">${takenIn === slot.items.length ? 'всё принято' : `${takenIn} из ${slot.items.length}`}</span>
+        </div>
+        ${slot.items.map(i => medRow(i, slot.id, date)).join('')}
+      </div>`;
+    }).join('');
+    html += `</div>`;
+  } else if (active.length) {
+    html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
+      <div class="grow sm">У активных курсов не указано время приёма — открой курс и поставь утро, день или вечер.</div></div></div>`;
+  }
+
+  const later = all.filter(m => MED.statusOf(m, date) === 'later');
+  const past = all.filter(m => ['done', 'stopped'].includes(MED.statusOf(m, date)));
+
+  if (active.length) {
+    html += `<div class="cap">Курсы · ${active.length}</div><div class="card list">`;
+    html += active.map(m => medCourseRow(m, date)).join('');
+    html += `</div>`;
+  }
+  if (later.length) {
+    html += `<div class="cap">Начнутся позже</div><div class="card list">${later.map(m => medCourseRow(m, date)).join('')}</div>`;
+  }
+  if (past.length) {
+    html += `<div class="cap">Закончены · ${past.length}</div><div class="card list">${past.slice(0, 12).map(m => medCourseRow(m, date)).join('')}</div>`;
+  }
+
+  html += `<button class="btn ghost" data-act="med-new">Добавить лекарство руками</button>`;
+  html += `<div class="card flat" style="margin-top:12px"><div class="row">${icon('bell', 'ico s')}
+    <div class="grow sm">Приложение <b>не звонит и не шлёт уведомлений</b>: оно живёт внутри Телеграма и не может будить телефон. Список ждёт тебя здесь — открой утром и вечером.</div></div></div>`;
+  html += `<div class="disc">Лечение назначает врач. BioLens только помнит назначенное и считает дни курса. Дозу, время и отмену обсуждай с врачом.</div>`;
+  return html;
+}
+
+function medCourseRow(m, date) {
+  const st = MED.statusOf(m, date);
+  const unchecked = m.source === 'ai' && !m.confirmed;
+  return `<div class="it" data-act="med" data-id="${esc(m.id)}">
+    ${unchecked ? icon('warning', 'ico s') : `<span class="dot ${st === 'active' ? '' : 'unknown'}"></span>`}
+    <div class="grow"><div class="nm">${esc(m.name)}${m.dose ? ` · ${esc(m.dose)}` : ''}</div>
+      <div class="sm">${esc(MED.scheduleText(m))} · ${esc(MED.courseText(m, date))}${unchecked ? ' · не проверено' : ''}</div></div>
+    ${chevron()}</div>`;
+}
+
+/* ══ ОДИН КУРС ═══════════════════════════════════════════════ */
+
+export function medDetail(app) {
+  const m = MED.state.meds.find(x => x.id === app.param.id);
+  if (!m) return backHead('Курс', '') + `<div class="card">Курс не найден.</div>`;
+  const date = S.todayISO();
+  const st = MED.statusOf(m, date);
+  const p = MED.progressOf(m, date);
+  const doc = m.docId ? S.state.docs.find(d => d.id === m.docId) : null;
+
+  let html = backHead(m.name, [m.dose, m.form].filter(Boolean).join(' · ') || 'доза не указана');
+
+  const stWord = { active: 'принимаешь сейчас', done: 'курс закончен', stopped: 'приём остановлен', later: 'ещё не начался', ask: 'нужно подтвердить' }[st];
+  html += `<div class="card">
+    <div class="row">
+      <div class="grow">
+        <div class="hero"><div class="big" style="font-size:34px">${p.total ? `${Math.max(1, Math.min(p.day, p.total))}<span style="font-size:18px;color:var(--ink3)"> / ${p.total}</span>` : '—'}</div></div>
+        <div class="sm" style="margin-top:6px">${p.total ? 'день курса' : 'срок окончания не указан'} · ${stWord}</div>
+      </div>
+      <!-- цвет в этом приложении означает состояние здоровья, а не ход курса -->
+      <span class="tag">${st === 'active' ? 'активен' : stWord}</span>
+    </div>
+    ${p.total ? `<div class="prog" style="margin-top:12px"><i style="width:${Math.max(2, Math.min(100, Math.round((p.day / p.total) * 100)))}%"></i></div>` : ''}
+    <div class="divide"></div>
+    <div class="kv"><span class="k">Когда принимать</span><span class="v">${esc(MED.scheduleText(m))}</span></div>
+    ${m.freqText ? `<div class="kv"><span class="k">В назначении написано</span><span class="v">${esc(m.freqText)}</span></div>` : ''}
+    <div class="kv"><span class="k">Начало</span><span class="v">${m.startDate ? S.ruDate(m.startDate) : '—'}</span></div>
+    <div class="kv"><span class="k">Окончание</span><span class="v">${p.end ? S.ruDate(p.end) : 'не указано'}</span></div>
+    ${MED.foodText(m.food) ? `<div class="kv"><span class="k">Еда</span><span class="v">${MED.foodText(m.food)}</span></div>` : ''}
+    ${m.instructions ? `<div class="kv"><span class="k">Как принимать</span><span class="v">${esc(m.instructions)}</span></div>` : ''}
+  </div>`;
+
+  if (m.source === 'ai' && !m.confirmed) {
+    html += `<div class="card note">
+      <div class="row">${icon('warning', 'ico s')}<div class="grow"><div class="nm" style="font-size:14px">Прочитано с документа — сверь</div></div></div>
+      <div class="sm" style="margin:8px 0 11px;line-height:1.5">Название, дозу и время я взял с ${doc ? 'документа' : 'назначения'}${m.confidence < 0.75 ? ', и часть строки читалась неуверенно' : ''}. Ошибка в дозе опаснее пропуска — посмотри на оригинал и подтверди.</div>
+      <div class="chips">
+        <button class="chip on" data-act="med-ok" data-id="${esc(m.id)}">Всё верно</button>
+        <button class="chip" data-act="med-edit" data-id="${esc(m.id)}">Исправить</button>
+        ${doc ? `<button class="chip" data-act="doc" data-id="${esc(doc.id)}">Открыть оригинал</button>` : ''}
+      </div>
+    </div>`;
+  }
+
+  if (m.missing?.length) {
+    html += `<div class="card note"><div class="row">${icon('warning', 'ico s')}
+      <div class="grow"><div class="nm" style="font-size:14px">${m.missing.includes('schedule') ? 'Не знаю, когда принимать' : 'Не знаю дозу'}</div>
+        <div class="sm">В документе этого не было, а придумывать нельзя. Допиши — и курс встанет в расписание дня.</div></div></div>
+      <button class="chip on" data-act="med-edit" data-id="${esc(m.id)}" style="margin-top:11px">Дописать</button></div>`;
+  }
+
+  /* Сегодняшние приёмы — прямо здесь, чтобы не возвращаться на главную */
+  const slots = (m.slots || []);
+  if (slots.length && st === 'active' && MED.isOnToday(m, date)) {
+    html += `<div class="cap">Сегодня</div><div class="card" style="padding:6px 16px 12px">
+      ${slots.map(id => {
+        const s = MED.SLOTS.find(x => x.id === id);
+        const intake = MED.intakeOf(m.id, date, id);
+        const taken = intake?.status === 'taken';
+        return `<div class="med-row${taken ? ' done' : ''}">
+          <button class="tick${taken ? ' on' : ''}" data-act="take" data-id="${esc(m.id)}" data-slot="${esc(id)}" data-date="${esc(date)}">${icon('check', 'ico s')}</button>
+          <div class="grow"><div class="nm">${s.title}</div>
+            <div class="sm">${taken ? `отмечено в ${new Date(intake.at).toTimeString().slice(0, 5)}` : `${s.when} · ${m.dose || 'доза не указана'}`}</div></div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  const days = MED.recentDays(m, 14, date);
+  const adh = MED.adherence(m, date);
+  if (days.length > 1) {
+    html += `<div class="cap">Как шло</div><div class="card">
+      <div class="daygrid">${days.map(d => {
+        const cls = d.marks.every(x => x === 'taken') ? 'full' : d.some ? 'part' : 'none';
+        return `<div class="daycell ${cls}" title="${d.date}"><span>${+d.date.slice(8, 10)}</span></div>`;
+      }).join('')}</div>
+      ${adh && adh.planned ? `<div class="sm" style="margin-top:11px">Отмечено ${adh.taken} из ${adh.planned} приёмов за ${adh.days} ${plural(adh.days, 'день', 'дня', 'дней')}. Считаются только отмеченные — если принял и забыл отметить, я об этом не знаю.</div>` : ''}
+    </div>`;
+  }
+
+  if (doc) {
+    html += `<div class="cap">Откуда</div>
+    <div class="card tap" data-act="doc" data-id="${esc(doc.id)}"><div class="row">
+      ${icon(docIcon(doc.type, doc.isPdf), 'ico s')}
+      <div class="grow"><div class="nm">${esc(doc.title || doc.fileName || 'Документ')}</div>
+        <div class="sm">${doc.date ? S.ruDate(doc.date) : 'дата не разобрана'}${doc.lab ? ' · ' + esc(doc.lab) : ''}</div></div>
+      ${chevron()}</div></div>`;
+  }
+
+  html += `<div class="card">
+    <div class="row" style="flex-wrap:wrap;gap:8px">
+      <button class="mini" data-act="med-edit" data-id="${esc(m.id)}">Изменить</button>
+      ${st === 'active' || st === 'ask'
+        ? `<button class="mini" data-act="med-stop" data-id="${esc(m.id)}">Закончил принимать</button>`
+        : `<button class="mini" data-act="med-resume" data-id="${esc(m.id)}">Снова принимаю</button>`}
+      <button class="mini warn" data-act="med-del" data-id="${esc(m.id)}">Удалить курс</button>
+    </div>
+  </div>`;
+
+  html += `<div class="disc">Это назначение врача, а не совет приложения. Дозу и срок меняет только врач — BioLens просто помнит и считает дни.</div>`;
+  return html;
+}
+
 /* ══ ЕДА ═════════════════════════════════════════════════════ */
 
 export function food(app) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = S.todayISO();
   const date = app.foodDate || today;
   const meals = S.mealsOn(date);
   const t = S.dayTotals(date);
@@ -900,7 +1268,7 @@ export function doctor(app) {
   const recent = S.state.docs.filter(d => d.status === 'ready' && d.type === 'blood')
     .sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 3);
 
-  let html = backHead('Для врача', `собрано ${S.ruDate(new Date().toISOString().slice(0, 10))} · одна страница`);
+  let html = backHead('Для врача', `собрано ${S.ruDate(S.todayISO())} · одна страница`);
 
   html += `<div class="card">
     <div class="cap" style="padding:0 0 6px">Кто</div>
@@ -919,6 +1287,18 @@ export function doctor(app) {
         </div>`;
       }).join('')}
     </div></div>`;
+  }
+
+  /* «Что вы принимаете?» — первый вопрос на любом приёме. Раньше ответа
+     на этой странице не было вовсе. */
+  const today = S.todayISO();
+  const taking = MED.state.meds.filter(m => ['active', 'ask'].includes(MED.statusOf(m, today)));
+  if (taking.length) {
+    html += `<div class="card"><div class="cap" style="padding:0 0 6px">Что принимаю сейчас</div>
+      ${taking.map(m => `<div class="kv"><span class="k">${esc(m.name)}${m.dose ? ` ${esc(m.dose)}` : ''}</span>
+        <span class="v" style="font-weight:600;font-size:13px">${esc(MED.scheduleText(m))}${MED.progressOf(m, today).total ? ` · ${esc(MED.courseText(m, today))}` : ''}</span></div>`).join('')}
+      <div class="sm" style="margin-top:9px">Со слов назначений, которые сфотографированы в приложении.</div>
+    </div>`;
   }
 
   if (recent.length) {
@@ -1106,7 +1486,7 @@ export function settingsView(app) {
 
   html += `<div class="card">
     <div class="row"><div class="grow"><div class="nm" style="font-size:14px">На этом устройстве</div>
-      <div class="sm">${S.state.docs.length} документов · ${S.state.meas.length} замеров · ${S.state.meals.length} блюд</div></div>
+      <div class="sm">${S.state.docs.length} документов · ${S.state.meas.length} замеров · ${MED.state.meds.length} курсов · ${S.state.meals.length} блюд</div></div>
       ${icon('check', 'ico s')}</div>
     <div class="divide"></div>
     <div class="row"><div class="grow"><div class="nm" style="font-size:14px">Копия в облаке Телеграма</div>
@@ -1116,7 +1496,7 @@ export function settingsView(app) {
       <button class="tog ${s.autoCloud ? 'on' : ''}" data-act="toggle-cloud"></button></div>
     <div class="divide"></div>
     <div class="sm" style="line-height:1.6">
-      В облако уходят <b>числа, даты, лаборатории и еда</b> — этого хватает, чтобы восстановить все линии на новом телефоне.
+      В облако уходят <b>числа, даты, лаборатории, назначенные лекарства и еда</b> — этого хватает, чтобы восстановить все линии и расписание приёма на новом телефоне.
       <b>Снимки туда не помещаются</b> (лимит около 4 МБ), они остаются на устройстве. Хочешь сохранить и оригиналы — сделай копию файлом.
     </div>
     <div class="divide"></div>
@@ -1230,10 +1610,13 @@ export function onboarding(app) {
 /* ══ ТАБ-БАР ═════════════════════════════════════════════════ */
 
 export function tabbar(active) {
+  /* Хроника ушла из дока: все файлы теперь лежат внизу главной, а ходить
+     за ними на отдельную вкладку было лишним шагом каждый день. Её место
+     заняло то, что нужно утром, днём и вечером. */
   const items = [
-    ['summary', 'sparkle', 'Сводка'],
+    ['summary', 'heartbeat', 'Здоровье'],
+    ['meds', 'pill', 'Лекарства'],
     ['markers', 'chartline', 'Показатели'],
-    ['timeline', 'calendar', 'Хроника'],
     ['food', 'forkknife', 'Тарелка'],
     ['ask', 'chat', 'Спросить'],
   ];
