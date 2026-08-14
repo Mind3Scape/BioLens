@@ -24,6 +24,18 @@
 
   --shadow:0 6px 20px rgba(21,22,27,0.06);
   --safe-b:env(safe-area-inset-bottom,0px);
+
+  /* Концентричность: радиус вложенного = внешний минус отступ карточки (13).
+     Одно число на всё приложение — тогда углы всех вложений сходятся. */
+  --r:18px; --r-in:8px;
+
+  /* Плавающий слой — единственное место, где живёт стекло.
+     В свежей версии системы у него появились тёмная кромка и более яркий
+     верхний блик: без них стекло на светлом фоне «растворяется». */
+  --glass:rgba(255,255,255,0.60);
+  --glass-edge:rgba(21,22,27,0.10);
+  --glass-spec:rgba(255,255,255,0.95);
+  --glass-shadow:0 10px 30px rgba(21,22,27,0.13);
 }
 html[data-theme="dark"]{
   --canvas:#0B0C0F; --surface:#1B1C21; --field:#26272D;
@@ -36,6 +48,10 @@ html[data-theme="dark"]{
   --band:rgba(255,255,255,0.06); --band-line:rgba(255,255,255,0.18);
 
   --shadow:0 6px 20px rgba(0,0,0,0.35);
+  --glass:rgba(28,29,35,0.66);
+  --glass-edge:rgba(0,0,0,0.55);
+  --glass-spec:rgba(255,255,255,0.16);
+  --glass-shadow:0 10px 30px rgba(0,0,0,0.45);
 }
 
 html,body{height:100%}
@@ -53,52 +69,55 @@ html.tg #app{height:var(--tg-height,100%)}
    индикатором. Поэтому системный env-отступ здесь обнуляем и слушаем только
    инсеты Телеграма — иначе док повисает высоко над краем. */
 html.tg{--safe-b:0px}
-html.tg #view{padding-top:calc(22px + var(--tg-top, 0px));padding-bottom:calc(120px + var(--tg-bottom, 0px))}
+html.tg #view{padding-top:calc(16px + var(--tg-top, 0px));padding-bottom:calc(104px + var(--tg-bottom, 0px))}
 html.tg .tabs{padding-bottom:calc(8px + var(--tg-bottom, 0px))}
 html.tg .toast{bottom:calc(92px + var(--tg-bottom, 0px))}
-#view{flex:1;overflow-y:auto;overflow-x:hidden;padding:14px 16px 120px;-webkit-overflow-scrolling:touch}
+#view{flex:1;overflow-y:auto;overflow-x:hidden;padding:10px 14px 104px;-webkit-overflow-scrolling:touch}
 #view::-webkit-scrollbar{width:0}
 
 /* ── типографика ── */
-h1{font-size:28px;font-weight:780;letter-spacing:-0.8px}
-h2{font-size:19px;font-weight:750;letter-spacing:-0.5px}
-.sub{font-size:12px;font-weight:600;color:var(--ink3);margin-top:2px}
-.cap{font-size:10.5px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;color:var(--ink3);padding:0 4px 8px}
-.sm{font-size:12.5px;color:var(--ink3);line-height:1.45}
-.nm{font-size:15px;font-weight:650;letter-spacing:-0.2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+h1{font-size:25px;font-weight:760;letter-spacing:-0.7px}
+h2{font-size:18px;font-weight:740;letter-spacing:-0.45px}
+.sub{font-size:11.5px;font-weight:600;color:var(--ink3);margin-top:1px}
+.cap{font-size:10px;font-weight:800;letter-spacing:0.9px;text-transform:uppercase;color:var(--ink4);padding:0 3px 5px}
+.sm{font-size:12px;color:var(--ink3);line-height:1.42}
+.nm{font-size:14.5px;font-weight:640;letter-spacing:-0.2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .val{font-size:16px;font-weight:750;letter-spacing:-0.4px}
 .unit{font-size:11px;font-weight:600;color:var(--ink3);margin-left:2px}
 .muted{color:var(--ink3)}
 b,strong{font-weight:680}
 
 /* ── шапка ── */
-.head{display:flex;align-items:center;gap:10px;padding:6px 2px 12px}
+.head{display:flex;align-items:center;gap:9px;padding:2px 2px 10px}
 .head .grow{flex:1;min-width:0}
-.rnd{width:42px;height:42px;min-width:42px;border-radius:99px;background:var(--surface);display:flex;align-items:center;
+.rnd{width:38px;height:38px;min-width:38px;border-radius:99px;background:var(--surface);display:flex;align-items:center;
   justify-content:center;color:var(--ink);box-shadow:0 3px 10px rgba(21,22,27,0.08);cursor:pointer;border:none}
 .rnd.dark{background:var(--ink);color:var(--surface)}
 .rnd:active{transform:scale(0.94)}
 
 /* ── карточки ── */
-.card{background:var(--surface);border-radius:22px;padding:15px 16px;box-shadow:var(--shadow);margin-bottom:12px}
+/* Радиус и отступ связаны: вложенный элемент получает «внешний минус отступ»
+   (--r-in), иначе углы не концентричны и карточка выглядит собранной
+   из чужих деталей. Правило из свежих рекомендаций Apple по Liquid Glass. */
+.card{background:var(--surface);border-radius:var(--r);padding:12px 13px;box-shadow:var(--shadow);margin-bottom:8px}
 .card.flat{box-shadow:0 2px 8px rgba(21,22,27,0.05)}
 /* пояснения в карточках — это текст, который надо читать, а не подпись мелким серым */
 .card.flat .sm,.card .sm.read{color:var(--ink2);font-size:13px}
 .card.tap{cursor:pointer}
 .card.tap:active{transform:scale(0.99)}
 .card.note{border:1px solid var(--hair2)}
-.row{display:flex;align-items:center;gap:11px}
+.row{display:flex;align-items:center;gap:10px}
 .grow{flex:1;min-width:0}
-.divide{height:1px;background:var(--hair);margin:11px -16px}
-.divide.in{margin:11px 0}
+.divide{height:1px;background:var(--hair);margin:10px -13px}
+.divide.in{margin:10px 0}
 .stack>*+*{margin-top:10px}
 
 /* ── ИИ-блок ── */
-.ai{background:#15161B;color:#fff;border-radius:22px;padding:16px 17px;margin-bottom:12px}
+.ai{background:#15161B;color:#fff;border-radius:var(--r);padding:13px 14px;margin-bottom:8px}
 html[data-theme="dark"] .ai{background:#25262C}
 .ai .hd{display:flex;align-items:center;gap:8px}
 .ai .hd .t{font-size:10.5px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;color:rgba(255,255,255,0.55)}
-.ai p{margin-top:9px;font-size:14.5px;line-height:1.55;letter-spacing:-0.2px;color:rgba(255,255,255,0.92)}
+.ai p{margin-top:7px;font-size:14px;line-height:1.5;letter-spacing:-0.2px;color:rgba(255,255,255,0.92)}
 .ai p b{color:#fff;font-weight:750}
 .ai .src{margin-top:11px;display:flex;gap:6px;flex-wrap:wrap}
 .schip{font-size:11px;font-weight:600;color:rgba(255,255,255,0.72);background:rgba(255,255,255,0.10);
@@ -127,7 +146,7 @@ html[data-theme="dark"] .ai{background:#25262C}
 .doubt{border-bottom:1.5px dashed var(--edge);padding-bottom:1px}
 
 /* ── управление ── */
-.btn{height:50px;border-radius:99px;background:var(--ink);color:var(--surface);display:flex;align-items:center;
+.btn{height:48px;border-radius:99px;background:var(--ink);color:var(--surface);display:flex;align-items:center;
   justify-content:center;gap:8px;font-size:15px;font-weight:700;letter-spacing:-0.2px;border:none;width:100%;
   box-shadow:0 8px 22px rgba(21,22,27,0.20);cursor:pointer;font-family:inherit}
 .btn:active{transform:scale(0.98)}
@@ -170,16 +189,50 @@ label.lab{display:block;font-size:12px;font-weight:700;color:var(--ink3);margin:
   transition:left .18s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .tog.on{background:var(--ink)} .tog.on:after{left:21px}
 
-/* ── таб-бар ── */
-.tabs{position:absolute;left:0;right:0;bottom:0;padding:0 12px calc(10px + var(--safe-b));pointer-events:none}
-.dock{pointer-events:auto;background:rgba(255,255,255,0.75);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
-  border-radius:28px;box-shadow:0 10px 30px rgba(21,22,27,0.14), inset 0 0 0 1px rgba(255,255,255,0.7);
-  display:flex;align-items:center;justify-content:space-around;padding:10px 4px 9px}
-html[data-theme="dark"] .dock{background:rgba(30,31,37,0.82);box-shadow:0 10px 30px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(255,255,255,0.09)}
-.tab{display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--ink3);font-size:10px;font-weight:650;
-  background:none;border:none;cursor:pointer;font-family:inherit;flex:1;padding:2px 0}
+/* ── шапка при прокрутке ──
+   Крупный заголовок уезжает вместе с содержимым, и на его месте проявляется
+   узкая стеклянная полоса с названием экрана — так ведёт себя навигация
+   в системе. Содержимое проезжает ПОД ней, поэтому стекло здесь уместно:
+   ему есть что преломлять. */
+#topbar{position:absolute;left:0;right:0;top:0;z-index:20;pointer-events:none;opacity:0;
+  transform:translateY(-8px);transition:opacity .2s ease, transform .24s cubic-bezier(.22,1,.36,1);
+  padding:calc(9px + var(--tg-top, 0px)) 12px 9px;
+  background:var(--glass);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);
+  box-shadow:inset 0 -0.5px 0 var(--glass-edge);
+  display:flex;align-items:center;gap:8px}
+#topbar.on{opacity:1;transform:none;pointer-events:auto}
+#topbar .tt{flex:1;min-width:0;font-size:15px;font-weight:700;letter-spacing:-0.3px;text-align:center;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#topbar .rnd{width:32px;height:32px;min-width:32px;box-shadow:none;background:transparent}
+#topbar .spacer{width:32px;min-width:32px}
+
+/* ── таб-бар ──
+   Плавающая панель над контентом: контент проезжает ПОД ней, поэтому стекло
+   здесь работает — ему есть что преломлять. Стекло только тут: внутри карточек
+   оно превращается в мутное пятно и мешает читать числа.
+
+   Панель сжимается при прокрутке вниз (в компактном виде остаются одни значки)
+   и разворачивается, когда человек листает вверх или доходит до начала.
+   Так экран отдаёт содержимому те 30 пикселей, которые док занимал зря. */
+.tabs{position:absolute;left:0;right:0;bottom:0;padding:0 14px calc(9px + var(--safe-b));pointer-events:none;
+  display:flex;justify-content:center}
+.dock{pointer-events:auto;width:100%;
+  background:var(--glass);backdrop-filter:blur(26px) saturate(180%);-webkit-backdrop-filter:blur(26px) saturate(180%);
+  border-radius:24px;
+  box-shadow:var(--glass-shadow), inset 0 0.5px 0 var(--glass-spec), inset 0 0 0 0.5px var(--glass-edge);
+  display:flex;align-items:center;justify-content:space-around;padding:7px 4px 6px;
+  transition:padding .28s cubic-bezier(.22,1,.36,1), width .28s cubic-bezier(.22,1,.36,1), border-radius .28s}
+.tab{display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--ink3);font-size:9.5px;font-weight:640;
+  background:none;border:none;cursor:pointer;font-family:inherit;flex:1;padding:3px 0;letter-spacing:-0.1px}
 .tab.on{color:var(--ink)}
-.ico{width:22px;height:22px;display:block;fill:currentColor}
+.tab span{max-height:14px;max-width:80px;opacity:1;overflow:hidden;white-space:nowrap;
+  transition:max-height .24s cubic-bezier(.22,1,.36,1), max-width .24s cubic-bezier(.22,1,.36,1), opacity .16s}
+/* Сжатый вид: подписи убираются и по высоте, и по ширине — иначе колонка
+   остаётся шириной слова «Показатели», и панель не худеет, а только садится. */
+.dock.mini{width:auto;padding:9px 8px;border-radius:22px}
+.dock.mini .tab{flex:0 0 auto;padding:1px 13px}
+.dock.mini .tab span{max-height:0;max-width:0;opacity:0}
+.ico{width:21px;height:21px;display:block;fill:currentColor}
 .ico.s{width:17px;height:17px}
 .ico.l{width:26px;height:26px}
 
@@ -193,7 +246,7 @@ html[data-theme="dark"] .dock{background:rgba(30,31,37,0.82);box-shadow:0 10px 3
 @keyframes fade{from{opacity:0}to{opacity:1}}
 
 /* ── список ── */
-.list .it{display:flex;align-items:center;gap:11px;padding:11px 0;cursor:pointer}
+.list .it{display:flex;align-items:center;gap:10px;padding:9px 0;cursor:pointer}
 .list .it+.it{border-top:1px solid var(--hair)}
 .list .it:active{opacity:.7}
 
@@ -228,39 +281,58 @@ html[data-theme="dark"] .dock{background:rgba(30,31,37,0.82);box-shadow:0 10px 3
 .nline b{color:var(--ink)}
 
 /* ── дашборд состояния ──
-   Три числа в ряд: сколько показателей вне нормы, у границы и в норме.
-   Цвет здесь законный — это ровно то состояние, ради которого светофор и заведён. */
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.stat{background:var(--field);border-radius:16px;padding:11px 12px;text-align:left;border:none;cursor:pointer;
-  font-family:inherit;display:block;width:100%}
-.stat:active{transform:scale(0.97)}
-.stat .n{font-size:24px;font-weight:800;letter-spacing:-1px;line-height:1.1;color:var(--ink)}
-.stat .l{font-size:11px;font-weight:620;color:var(--ink3);margin-top:2px;letter-spacing:-0.1px}
+   Три числа одной строкой, разделённые волосяными линиями. Раньше это были
+   три залитые плитки — они занимали четверть первого экрана и весили больше,
+   чем сами показатели под ними. Цвет здесь законный: это ровно то состояние,
+   ради которого светофор в приложении и заведён. */
+.stats{display:flex;align-items:stretch;margin:-2px 0 0}
+.stat{flex:1;background:none;border:none;cursor:pointer;font-family:inherit;text-align:left;padding:2px 0 3px 12px;
+  position:relative;min-width:0}
+.stat:first-child{padding-left:0}
+.stat+.stat:before{content:"";position:absolute;left:0;top:3px;bottom:3px;width:1px;background:var(--hair)}
+.stat:active{opacity:.6}
+.stat .n{font-size:21px;font-weight:800;letter-spacing:-0.9px;line-height:1.15;color:var(--ink)}
+.stat .l{font-size:10.5px;font-weight:600;color:var(--ink3);margin-top:1px;letter-spacing:-0.1px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
 
 /* ── приём лекарств ──
    Часть дня — заголовок, под ним строки приёма. Текущая часть дня отмечена
    полосой слева, а не цветом: цвет в этом приложении означает здоровье,
    а не время суток. */
-.slot{padding:10px 0}
+.slot{padding:7px 0}
 .slot+.slot{border-top:1px solid var(--hair)}
-.slot-h{display:flex;align-items:baseline;gap:8px;padding:2px 0 4px}
-.slot-h .t{font-size:13px;font-weight:750;letter-spacing:-0.2px}
-.slot-h .w{font-size:11.5px;color:var(--ink4);margin-left:7px;font-weight:600}
+.slot-h{display:flex;align-items:baseline;gap:6px;padding:1px 0 3px}
+.slot-h .t{font-size:12px;font-weight:750;letter-spacing:-0.1px}
+.slot-h .w{font-size:11px;color:var(--ink4);font-weight:600}
 .slot.now{position:relative}
-.slot.now:before{content:"";position:absolute;left:-16px;top:12px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--ink)}
+.slot.now:before{content:"";position:absolute;left:-13px;top:9px;bottom:6px;width:2.5px;border-radius:0 3px 3px 0;background:var(--ink)}
 .slot.now .slot-h .t{font-weight:800}
 
-.med-row{display:flex;align-items:center;gap:12px;padding:8px 0;cursor:pointer}
+.med-row{display:flex;align-items:center;gap:10px;padding:6px 0;cursor:pointer}
 .med-row+.med-row{border-top:1px solid var(--hair)}
 .med-row:active{opacity:.75}
 .med-row.done .nm{color:var(--ink3)}
-/* Кружок-отметка: 38px — палец попадает не глядя. Принято = залито чернилами,
-   зелёный тут был бы четвёртым смыслом у цвета состояния. */
-.tick{width:38px;height:38px;min-width:38px;border-radius:99px;background:transparent;border:1.8px solid var(--hair2);
+/* Кружок-отметка: 34px и вся строка тоже попадает под палец. Принято = залито
+   чернилами; зелёный тут был бы четвёртым смыслом у цвета состояния. */
+.tick{width:34px;height:34px;min-width:34px;border-radius:99px;background:transparent;border:1.6px solid var(--hair2);
   display:flex;align-items:center;justify-content:center;color:transparent;cursor:pointer;padding:0;transition:background .14s}
-.tick .ico{width:20px;height:20px}
+.tick .ico{width:18px;height:18px}
 .tick.on{background:var(--ink);border-color:var(--ink);color:var(--surface)}
 .tick:active{transform:scale(0.9)}
+
+/* ── строка-действие внутри группы ──
+   Вместо трёх отдельных карточек во всю ширину — одна группа коротких строк.
+   Так делает системный список настроек: меньше пустот, больше видно сразу. */
+.grp{background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow);margin-bottom:8px;padding:0 13px}
+.grp .gi{display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer;min-height:44px}
+.grp .gi+.gi{border-top:1px solid var(--hair)}
+.grp .gi:active{opacity:.6}
+.grp .gi .t{font-size:14px;font-weight:600;letter-spacing:-0.2px;flex:1;min-width:0}
+.grp .gi .v{font-size:12px;color:var(--ink3);white-space:nowrap}
+.grp .gi .ico{color:var(--ink3)}
+/* Значки в группе держим одним весом и одним серым: залитые чёрные
+   перетягивали на себя внимание с самих строк. */
+.grp .gi.add .t{font-weight:660}
 
 /* Как шло: две недели курса сеткой — пропуски видно без чтения */
 .daygrid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
@@ -272,12 +344,12 @@ html[data-theme="dark"] .dock{background:rgba(30,31,37,0.82);box-shadow:0 10px 3
 /* ── прочее ── */
 .disc{font-size:12px;line-height:1.5;color:var(--ink3);text-align:center;padding:14px 12px 0}
 .hero{display:flex;align-items:flex-end;gap:9px}
-.hero .big{font-size:46px;font-weight:800;letter-spacing:-2px;line-height:0.95}
+.hero .big{font-size:40px;font-weight:800;letter-spacing:-1.8px;line-height:0.95}
 .hero .u{font-size:13px;font-weight:650;color:var(--ink3);padding-bottom:5px}
-.kv{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 0;font-size:14px}
+.kv{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:7px 0;font-size:13.5px}
 .kv+.kv{border-top:1px solid var(--hair)}
 .kv .k{color:var(--ink2)} .kv .v{font-weight:700;text-align:right}
-.empty{text-align:center;padding:40px 20px}
+.empty{text-align:center;padding:34px 18px}
 .empty .t{font-size:19px;font-weight:750;letter-spacing:-0.4px;margin-top:14px}
 .empty .d{font-size:13.5px;line-height:1.55;color:var(--ink2);margin-top:8px}
 .toast{position:fixed;left:50%;bottom:calc(100px + var(--safe-b));transform:translateX(-50%);z-index:60;

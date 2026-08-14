@@ -69,6 +69,18 @@ function render() {
      на карточке курса док гаснет весь, и непонятно, где ты находишься. */
   const OWNER = { med: 'meds', marker: 'markers', meal: 'food', timeline: 'summary', doc: 'summary', inbox: 'summary', due: 'markers', doctor: 'summary' };
   $('#tabbar').innerHTML = s.onboarded ? V.tabbar(OWNER[app.route] || app.route) : '';
+  // док пересобирается вместе с экраном — сжатое состояние надо вернуть на место
+  if (dockMini) $('#dock')?.classList.add('mini');
+
+  /* Компактная шапка берёт название прямо с экрана: один источник правды,
+     и она не может разойтись с крупным заголовком под ней. */
+  const bar = $('#topbar');
+  const title = view.querySelector('h1, h2')?.textContent || '';
+  bar.innerHTML = s.onboarded
+    ? `${app.stack.length ? `<button class="rnd" data-act="back">${V.backIcon()}</button>` : '<div class="spacer"></div>'}
+       <div class="tt">${esc(title)}</div><div class="spacer"></div>`
+    : '';
+  bar.classList.toggle('on', s.onboarded && view.scrollTop > 46);
   TG.setBackButton(app.stack.length > 0);
   hydrateImages(view);
 
@@ -124,10 +136,32 @@ async function hydrateImages(root) {
   }
 }
 
+/* ── плавающий док ──────────────────────────────────────────────
+   Листаешь вниз — панель сжимается до одних значков и отдаёт экрану свои
+   тридцать пикселей; листаешь вверх или доходишь до начала — разворачивается
+   с подписями. Так ведёт себя нижняя панель в новой версии системы, и это
+   единственный честный способ уменьшить её, не отнимая ни одной вкладки. */
+let dockMini = false, lastScrollY = 0;
+
+function watchDock() {
+  const view = $('#view');
+  view.addEventListener('scroll', () => {
+    const y = view.scrollTop;
+    $('#topbar')?.classList.toggle('on', y > 46 && !!$('#dock'));
+    const dock = $('#dock');
+    if (!dock) { lastScrollY = y; return; }
+    if (y > lastScrollY + 5 && y > 70 && !dockMini) { dockMini = true; dock.classList.add('mini'); }
+    else if ((y < lastScrollY - 7 || y < 40) && dockMini) { dockMini = false; dock.classList.remove('mini'); }
+    lastScrollY = y;
+  }, { passive: true });
+}
+
 function go(route, param = {}) {
   if (TABS.includes(route)) app.stack = [];
   else app.stack.push({ route: app.route, param: app.param });
   app.route = route; app.param = param;
+  // новый экран начинается сверху — значит и док разворачивается
+  dockMini = false; lastScrollY = 0;
   render();
   $('#view').scrollTop = 0;
 }
@@ -135,6 +169,7 @@ function back() {
   const prev = app.stack.pop();
   app.route = prev?.route || 'summary';
   app.param = prev?.param || {};
+  dockMini = false; lastScrollY = 0;      // экран начинается сверху — док разворачиваем
   render();
 }
 
@@ -838,6 +873,7 @@ async function importAll() {
   app.models = db.cachedModels();
   app.hasDemo = hasDemo();
   render();
+  watchDock();
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme(db.settings().theme));
 
   // новое устройство: локально пусто, а в облаке лежит копия

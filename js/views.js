@@ -32,7 +32,7 @@ const backHeadWide = (title, sub, right = '') => `
     ${right}
   </div>`;
 
-const backIcon = () => `<svg class="ico s" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="14.5,5 7.5,12 14.5,19"/></svg>`;
+export const backIcon = () => `<svg class="ico s" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="14.5,5 7.5,12 14.5,19"/></svg>`;
 
 /* Один знак «это открывается» на всё приложение. Раньше в правом углу карточек
    стояли разные декоративные иконки — лист, плюс, — и по ним нельзя было
@@ -69,7 +69,7 @@ export function summary(app) {
           <div class="sm">${S.state.queue.total ? `${done} из ${S.state.queue.total} · можно закрыть приложение` : 'сейчас начну'}</div></div>
         <button class="mini" data-act="inbox">Открыть</button>
       </div>
-      <div class="prog" style="margin-top:11px"><i style="width:${S.state.queue.total ? Math.round(done / S.state.queue.total * 100) : 4}%"></i></div>
+      <div class="prog" style="margin-top:10px"><i style="width:${S.state.queue.total ? Math.round(done / S.state.queue.total * 100) : 4}%"></i></div>
     </div>`;
   }
 
@@ -86,7 +86,7 @@ export function summary(app) {
     html += `<div class="card"><div class="row"><div class="spin"></div><div class="grow sm">Смотрю, что изменилось…</div></div></div>`;
   }
 
-  const shifts = S.shifts(3);
+  const shifts = S.shifts(2);
   if (shifts.length) {
     html += `<div class="cap">Сдвинулось за год</div><div class="card list">`;
     html += shifts.map(m => {
@@ -97,8 +97,8 @@ export function summary(app) {
         ${statusDot(m.status)}
         <div class="grow"><div class="nm">${esc(m.title)}</div>
           <div class="sm">было ${S.trim(m.base?.value ?? '—')} · норма ${esc(S.fmtRef(m.last))}</div></div>
-        ${sparkline(m.series, { w: 58, h: 24 })}
-        <div style="text-align:right;min-width:52px">
+        ${sparkline(m.series, { w: 54, h: 22 })}
+        <div style="text-align:right;min-width:48px">
           <div class="val" style="color:${inkTone(m.status)}">${S.trim(m.last.value)}</div>
           <div class="delta ${tone}" style="display:block;margin-top:1px">${dir}${Math.round(m.change * 100)}%</div></div>
       </div>`;
@@ -106,44 +106,35 @@ export function summary(app) {
     html += `</div>`;
   }
 
-  /* Карточка открывается целиком: кнопка рядом с текстом отжимала его в три
-     строки на узком экране, а вести она всё равно могла только в одно место. */
-  const due = S.dueList().slice(0, 2);
-  for (const d of due) {
-    html += `<div class="card flat tap" data-act="due"><div class="row">${icon('clock', 'ico s')}
-      <div class="grow"><div class="nm" style="font-size:14px">${esc(d.title)} — ${d.daysOld > 700 ? Math.floor(d.daysOld / 365) + ' года не мерил' : 'пора пересдать'}</div>
-        <div class="sm">последний раз ${S.ruShort(d.last.date)}</div></div>
-      ${chevron()}</div></div>`;
-  }
-
+  /* Три бывшие карточки во всю ширину — теперь три строки одной группы.
+     Каждая из них раньше занимала по 70 пикселей ради одной мысли. */
+  const rows = [];
+  const due = S.dueList()[0];
+  if (due) rows.push(['due', 'clock', `${due.title} — пора пересдать`, due.daysOld > 700 ? `${Math.floor(due.daysOld / 365)} года` : S.ruShort(due.last.date), {}]);
   const goal = S.foodGoal();
   if (goal) {
     const t = S.dayTotals(today);
-    html += `<div class="card tap" data-act="tab" data-tab="food">
-      <div class="row">${icon('forkknife', 'ico s')}
-        <div class="grow"><div class="nm">Цель по питанию: ${esc(goal.goal)}</div>
-          <div class="sm">${t.count ? `сегодня ${t.count} приёма · ${t.kcal} ккал` : 'сегодня ещё ничего не записано'}</div></div>
-        ${chevron()}
-      </div></div>`;
+    rows.push(['tab', 'forkknife', `Питание: ${goal.goal}`, t.count ? `${t.kcal} ккал` : 'пусто', { tab: 'food' }]);
   }
-
-  html += `<div class="card tap" data-act="doctor">
-    <div class="row">${icon('stethoscope', 'ico s')}
-      <div class="grow"><div class="nm">Страница для врача</div>
-        <div class="sm">Вся картина за годы на один экран — вместе с тем, что принимаешь</div></div>
+  rows.push(['doctor', 'stethoscope', 'Страница для врача', '', {}]);
+  html += `<div class="grp">${rows.map(([act, ic, title, value, data]) => `
+    <div class="gi" data-act="${act}"${data.tab ? ` data-tab="${data.tab}"` : ''}>
+      ${icon(ic, 'ico s')}
+      <div class="t">${esc(title)}</div>
+      ${value ? `<div class="v">${esc(value)}</div>` : ''}
       ${chevron()}
-    </div></div>`;
+    </div>`).join('')}</div>`;
 
-  html += files(app, needsAttention);
+  html += archive(app, needsAttention);
 
   html += `<div class="disc">Приложение показывает факты, хранит документы и напоминает о назначенном. Оно не ставит диагнозов и не назначает лечение.</div>`;
   return html;
 }
 
 /* ── дашборд состояния ───────────────────────────────────────────
-   Первое, что человек видит утром: сколько показателей сейчас вне нормы.
-   Три числа вместо абзаца — цвет здесь законный, это ровно то состояние,
-   ради которого светофор в приложении и заведён. */
+   Первое, что человек видит утром. Три числа в строку, под ними — то, что
+   действительно вне нормы. Раньше числа стояли залитыми плитками и съедали
+   четверть первого экрана, весив больше, чем сами показатели. */
 function dashboard(app) {
   const list = S.markerList().filter(m => !m.stale);
   if (!list.length) {
@@ -157,30 +148,34 @@ function dashboard(app) {
   const edge = list.filter(m => m.status === 'edge').length;
   const ok = list.filter(m => m.status === 'ok').length;
   const lastDate = list.map(m => m.last.date).filter(Boolean).sort().slice(-1)[0];
-  const attention = S.attentionList().slice(0, 3);
+  const attention = S.attentionList();
+  const shown = attention.slice(0, 3);
 
   const tile = (n, label, cls) => `<button class="stat" data-act="tab" data-tab="markers">
     <div class="n ${cls}">${n}</div><div class="l">${label}</div></button>`;
 
-  return `<div class="cap">Состояние</div>
-  <div class="card">
+  return `<div class="card">
     <div class="stats">
       ${tile(out, 'вне нормы', 'c-out')}
       ${tile(edge, 'у границы', 'c-edge')}
       ${tile(ok, 'в норме', '')}
     </div>
-    <div class="sm" style="margin-top:11px">${list.length} ${plural(list.length, 'показатель', 'показателя', 'показателей')} с историей${lastDate ? ` · последний бланк ${S.ruShort(lastDate)}` : ''}</div>
-    ${attention.length ? `<div class="divide"></div><div class="list">${attention.map(m => `
+    ${shown.length ? `<div class="divide"></div><div class="list">${shown.map(m => `
       <div class="it" data-act="marker" data-key="${esc(m.key)}">
         ${statusDot(m.status)}
         <div class="grow"><div class="nm">${esc(m.title)}</div>
           <div class="sm">${statusWord(m.status, m.last.value, m.last.refLow, m.last.refHigh)} · норма ${esc(S.fmtRef(m.last))}</div></div>
-        ${sparkline(m.series, { w: 58, h: 24 })}
-        <div style="text-align:right;min-width:52px">
+        ${sparkline(m.series, { w: 54, h: 22 })}
+        <div style="text-align:right;min-width:50px">
           <div class="val" style="color:${inkTone(m.status)}">${S.trim(m.last.value)}</div>
           <div class="unit" style="display:block;margin:1px 0 0">${esc(m.unit)}</div>
         </div>
       </div>`).join('')}</div>` : ''}
+    <div class="divide"></div>
+    <div class="row" style="cursor:pointer" data-act="tab" data-tab="markers">
+      <div class="grow sm">${attention.length > shown.length ? `Ещё ${attention.length - shown.length} вне нормы · ` : ''}${list.length} ${plural(list.length, 'показатель', 'показателя', 'показателей')}${lastDate ? ` · бланк ${S.ruShort(lastDate)}` : ''}</div>
+      ${chevron()}
+    </div>
   </div>`;
 }
 
@@ -191,58 +186,56 @@ function dashboard(app) {
 function medsToday(app, date, plan) {
   const meds = MED.state.meds;
   if (!meds.length) {
-    return `<div class="cap">Приём лекарств</div>
-    <div class="card flat tap" data-act="tab" data-tab="meds"><div class="row">${icon('pill', 'ico s')}
-      <div class="grow"><div class="nm" style="font-size:14px">Сфотографируй назначение врача</div>
-        <div class="sm">Прочитаю, что и сколько дней принимать, и разложу по утрам и вечерам</div></div>
+    return `<div class="grp"><div class="gi" data-act="tab" data-tab="meds">
+      ${icon('pill', 'ico s')}
+      <div class="t">Сфотографируй назначение врача</div>
       ${chevron()}</div></div>`;
   }
 
   let html = '';
+  /* Одна строка вместо карточки с перечислением: список тех же лекарств
+     стоит прямо под ней, повторять их названия здесь — тратить две строки
+     на то, что и так видно. */
   const check = MED.unconfirmed();
   if (check.length) {
-    html += `<div class="card note tap" data-act="tab" data-tab="meds">
-      <div class="row">${icon('warning', 'ico s')}
-        <div class="grow"><div class="nm" style="font-size:14px">Проверь ${check.length === 1 ? 'назначение' : `назначения · ${check.length}`}</div>
-          <div class="sm">${check.slice(0, 3).map(m => esc(m.name)).join(', ')} — сверь дозу и время с листом врача</div></div>
-        ${chevron()}</div></div>`;
+    html += `<div class="grp"><div class="gi" data-act="tab" data-tab="meds">
+      ${icon('warning', 'ico s')}
+      <div class="t">${check.length === 1 ? 'Назначение не проверено' : `Не проверены назначения`}</div>
+      <div class="v">${check.length === 1 ? 'сверь с листом' : `${check.length} шт.`}</div>
+      ${chevron()}</div></div>`;
   }
 
   const ask = MED.askMeds(date);
   if (ask.length) {
     html += `<div class="card note">
-      <div class="row">${icon('clock', 'ico s')}<div class="grow"><div class="nm" style="font-size:14px">Ты ещё принимаешь ${esc(ask[0].name)}?</div>
-        <div class="sm">Назначено ${ask[0].docDate ? S.ruDate(ask[0].docDate) : 'давно'}, срок окончания не был указан — в расписание не ставлю, пока не скажешь</div></div></div>
-      <div class="chips" style="margin-top:11px">
+      <div class="row">${icon('clock', 'ico s')}<div class="grow"><div class="nm" style="font-size:13.5px">Ты ещё принимаешь ${esc(ask[0].name)}?</div>
+        <div class="sm">Назначено ${ask[0].docDate ? S.ruDate(ask[0].docDate) : 'давно'}, срок не указан — в расписание не ставлю</div></div></div>
+      <div class="chips" style="margin-top:10px">
         <button class="chip on" data-act="med-keep" data-id="${esc(ask[0].id)}">Принимаю</button>
         <button class="chip" data-act="med-stop" data-id="${esc(ask[0].id)}">Уже закончил</button>
-        <button class="chip" data-act="med" data-id="${esc(ask[0].id)}">Открыть курс</button>
       </div>
-      ${ask.length > 1 ? `<div class="sm" style="margin-top:10px">И ещё ${ask.length - 1} ${plural(ask.length - 1, 'курс ждёт', 'курса ждут', 'курсов ждут')} ответа — на вкладке «Лекарства»</div>` : ''}
+      ${ask.length > 1 ? `<div class="sm" style="margin-top:8px">И ещё ${ask.length - 1} ${plural(ask.length - 1, 'курс ждёт', 'курса ждут', 'курсов ждут')} ответа</div>` : ''}
     </div>`;
   }
 
   const d = MED.dayCount(date);
   if (!plan.length) {
     const act = MED.activeMeds(date).length;
-    html += `<div class="cap">Приём лекарств</div>
-    <div class="card flat tap" data-act="tab" data-tab="meds"><div class="row">${icon('pill', 'ico s')}
-      <div class="grow"><div class="nm" style="font-size:14px">${act ? 'На сегодня приёмов нет' : 'Сейчас курсов нет'}</div>
-        <div class="sm">${act ? 'У активных курсов не указано время приёма — открой и поставь' : 'Все курсы закончены. Новый появится с назначения врача'}</div></div>
+    return html + `<div class="grp"><div class="gi" data-act="tab" data-tab="meds">
+      ${icon('pill', 'ico s')}
+      <div class="t">${act ? 'У курсов не указано время приёма' : 'Курсов сейчас нет'}</div>
       ${chevron()}</div></div>`;
-    return html;
   }
 
   const nowId = MED.nowSlot(date)?.id;
   html += `<div class="cap">Приём лекарств · ${d.taken} из ${d.total}</div>`;
-  html += `<div class="card" style="padding:6px 16px 12px">`;
+  html += `<div class="card" style="padding:4px 13px 8px">`;
   html += plan.map(slot => {
     const takenIn = slot.items.filter(i => i.taken).length;
-    const isNow = slot.id === nowId;
-    return `<div class="slot${isNow ? ' now' : ''}">
+    return `<div class="slot${slot.id === nowId ? ' now' : ''}">
       <div class="slot-h">
-        <div class="grow"><span class="t">${slot.title}</span><span class="w">${slot.when}</span></div>
-        <span class="sm">${takenIn === slot.items.length ? 'всё принято' : `${takenIn} из ${slot.items.length}`}</span>
+        <div class="grow"><span class="t">${slot.title}</span> <span class="w">${slot.when}</span></div>
+        <span class="sm">${takenIn === slot.items.length ? 'принято' : `${takenIn} из ${slot.items.length}`}</span>
       </div>
       ${slot.items.map(i => medRow(i, slot.id, date)).join('')}
     </div>`;
@@ -272,33 +265,37 @@ function medRow(item, slotId, date) {
   </div>`;
 }
 
-/* ── файлы внизу главной ─────────────────────────────────────────
-   Раньше за своими же документами надо было идти на отдельную вкладку.
-   Теперь последние файлы лежат под рукой, а вся хроника — в одном нажатии. */
-function files(app, needsAttention) {
+/* ── архив внизу главной ─────────────────────────────────────────
+   Здесь же и добавление: раньше за новым документом надо было идти в шапку
+   или на другую вкладку, хотя место, где лежит архив, — самое очевидное,
+   куда человек тянется, чтобы этот архив пополнить. */
+function archive(app, needsAttention) {
   const all = S.state.docs;
   let html = '';
   if (needsAttention) {
-    html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}
-      <div class="grow"><div class="nm" style="font-size:14px">${needsAttention} ${plural(needsAttention, 'документ ждёт', 'документа ждут', 'документов ждут')} тебя</div>
-        <div class="sm">Не разобрал дату, не смог прочитать или нашёл дубль</div></div>
+    html += `<div class="card flat" style="padding:10px 13px"><div class="row">${icon('warning', 'ico s')}
+      <div class="grow"><div class="nm" style="font-size:13.5px">${needsAttention} ${plural(needsAttention, 'документ ждёт', 'документа ждут', 'документов ждут')} тебя</div>
+        <div class="sm">Нет даты, не прочитался или дубль</div></div>
       <button class="mini" data-act="inbox">Открыть</button></div></div>`;
   }
+
+  const addRows = `
+    <div class="gi add" data-act="scan">${icon('camera', 'ico s')}<div class="t">Снять бланк камерой</div>${chevron()}</div>
+    <div class="gi add" data-act="add">${icon('file', 'ico s')}<div class="t">Загрузить файл или PDF</div>${chevron()}</div>`;
+
   if (!all.length) {
-    return html + `<div class="cap">Файлы</div>
-    <div class="card flat tap" data-act="add"><div class="row">${icon('file', 'ico s')}
-      <div class="grow"><div class="nm" style="font-size:14px">Файлов пока нет</div>
-        <div class="sm">Анализы, снимки, выписки и назначения — всё хранится здесь</div></div>
-      ${chevron()}</div></div>`;
+    return html + `<div class="cap">Архив</div><div class="grp">${addRows}</div>
+      <div class="sm" style="text-align:center;padding:2px 10px 6px">Анализы, снимки, выписки и назначения — всё хранится здесь</div>`;
   }
+
   const recent = [...all]
     .sort((a, b) => (b.date || b.addedAt || '').localeCompare(a.date || a.addedAt || ''))
-    .slice(0, 6);
-  html += `<div class="cap">Файлы · ${all.length}</div>`;
-  html += `<div class="card list">${recent.map(d => docRow(d, d.status !== 'ready')).join('')}</div>`;
-  html += `<div class="row" style="gap:8px;margin-bottom:12px">
-    <button class="btn sm ghost" data-act="tab" data-tab="timeline" style="flex:1">Все файлы по годам</button>
-    <button class="btn sm ghost" data-act="add" style="flex:1">Добавить</button>
+    .slice(0, 5);
+  html += `<div class="cap">Архив · ${all.length} ${plural(all.length, 'файл', 'файла', 'файлов')}</div>`;
+  html += `<div class="card list" style="margin-bottom:8px">${recent.map(d => docRow(d, d.status !== 'ready')).join('')}</div>`;
+  html += `<div class="grp">
+    ${addRows}
+    <div class="gi" data-act="tab" data-tab="timeline">${icon('calendar', 'ico s')}<div class="t">Все файлы по годам</div><div class="v">${all.length}</div>${chevron()}</div>
   </div>`;
   return html;
 }
@@ -919,9 +916,9 @@ export function medsView(app) {
      пометкой. Два одинаковых перечня подряд читаются как ошибка. */
   const check = MED.unconfirmed();
   if (check.length) {
-    html += `<div class="card note"><div class="row">${icon('warning', 'ico s')}
-      <div class="grow sm" style="line-height:1.5">${check.length === 1 ? 'Одно назначение прочитано' : `${check.length} назначения прочитаны`} с документа и ещё не проверены.
-      Открой курс, сверь дозу и время с листом врача и нажми «Всё верно» — ошибка в дозе опаснее пропуска.</div></div></div>`;
+    html += `<div class="card note" style="padding:10px 13px"><div class="row">${icon('warning', 'ico s')}
+      <div class="grow sm" style="line-height:1.45">Прочитано с документа, но не проверено${check.length > 1 ? ` · ${check.length}` : ''}.
+      Открой курс и сверь дозу с листом врача: ошибка в дозе опаснее пропуска.</div></div></div>`;
   }
 
   const ask = MED.askMeds(date);
@@ -947,7 +944,7 @@ export function medsView(app) {
       const takenIn = slot.items.filter(i => i.taken).length;
       return `<div class="slot${slot.id === nowId ? ' now' : ''}">
         <div class="slot-h">
-          <div class="grow"><span class="t">${slot.title}</span><span class="w">${slot.when}</span></div>
+          <div class="grow"><span class="t">${slot.title}</span> <span class="w">${slot.when}</span></div>
           <span class="sm">${takenIn === slot.items.length ? 'всё принято' : `${takenIn} из ${slot.items.length}`}</span>
         </div>
         ${slot.items.map(i => medRow(i, slot.id, date)).join('')}
@@ -985,7 +982,7 @@ function medCourseRow(m, date) {
   const st = MED.statusOf(m, date);
   const unchecked = m.source === 'ai' && !m.confirmed;
   return `<div class="it" data-act="med" data-id="${esc(m.id)}">
-    ${unchecked ? icon('warning', 'ico s') : `<span class="dot ${st === 'active' ? '' : 'unknown'}"></span>`}
+    <span class="dot ${unchecked || st !== 'active' ? 'unknown' : ''}"></span>
     <div class="grow"><div class="nm">${esc(m.name)}${m.dose ? ` · ${esc(m.dose)}` : ''}</div>
       <div class="sm">${esc(MED.scheduleText(m))} · ${esc(MED.courseText(m, date))}${unchecked ? ' · не проверено' : ''}</div></div>
     ${chevron()}</div>`;
@@ -1156,17 +1153,19 @@ export function food(app) {
   if (app.aiFood) html += aiBlock('по цели', esc(app.aiFood).replace(/\n/g, '<br>'));
   else if (db.settings().apiKey) html += `<div class="card flat"><button class="mini" data-act="food-feedback">${icon('sparkle', 'ico s')} Как я иду к цели сегодня?</button></div>`;
 
-  html += `<div class="cap">Что съел</div>`;
+  /* Блюда — одним списком, а не стопкой отдельных карточек: так же, как
+     показатели и документы. Одинаковые вещи должны выглядеть одинаково. */
+  html += `<div class="cap">Что съел</div><div class="card list">`;
   for (const m of meals) {
-    html += `<div class="card tap" data-act="meal" data-id="${esc(m.id)}">
-      <div class="row">
-        <div class="thumb" style="width:52px;aspect-ratio:1"><img data-blob="${esc(m.blobId)}" alt=""></div>
-        <div class="grow"><div class="nm">${esc(m.title || 'Блюдо')}</div>
-          <div class="sm">${new Date(m.at).toTimeString().slice(0, 5)} · ${Math.round(m.nutrition?.kcal || 0)} ккал · Б ${Math.round(m.nutrition?.protein_g || 0)} · Ж ${Math.round(m.nutrition?.fat_g || 0)} · У ${Math.round(m.nutrition?.carbs_g || 0)}</div></div>
-        ${m.confidence != null && m.confidence < 0.6 ? `<span class="mini">на глаз</span>` : ''}
-      </div>
+    html += `<div class="it" data-act="meal" data-id="${esc(m.id)}">
+      <div class="thumb" style="width:44px;aspect-ratio:1"><img data-blob="${esc(m.blobId)}" alt=""></div>
+      <div class="grow"><div class="nm">${esc(m.title || 'Блюдо')}</div>
+        <div class="sm">${new Date(m.at).toTimeString().slice(0, 5)} · ${Math.round(m.nutrition?.kcal || 0)} ккал · Б ${Math.round(m.nutrition?.protein_g || 0)} · Ж ${Math.round(m.nutrition?.fat_g || 0)} · У ${Math.round(m.nutrition?.carbs_g || 0)}</div></div>
+      ${m.confidence != null && m.confidence < 0.6 ? `<span class="mini">на глаз</span>` : ''}
+      ${chevron()}
     </div>`;
   }
+  html += `</div>`;
 
   const pending = S.state.meals.filter(m => m.status === 'reading');
   if (pending.length) html += `<div class="card"><div class="row"><div class="spin"></div><div class="grow sm">Смотрю тарелку…</div></div></div>`;
@@ -1620,7 +1619,7 @@ export function tabbar(active) {
     ['food', 'forkknife', 'Тарелка'],
     ['ask', 'chat', 'Спросить'],
   ];
-  return `<div class="tabs"><div class="dock">
-    ${items.map(([id, ic, label]) => `<button class="tab ${active === id ? 'on' : ''}" data-act="tab" data-tab="${id}">${icon(ic)}${label}</button>`).join('')}
+  return `<div class="tabs"><div class="dock" id="dock">
+    ${items.map(([id, ic, label]) => `<button class="tab ${active === id ? 'on' : ''}" data-act="tab" data-tab="${id}">${icon(ic)}<span>${label}</span></button>`).join('')}
   </div></div>`;
 }
