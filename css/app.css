@@ -577,12 +577,10 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
    Весь день одним взглядом; подробности — этажом ниже, на своём экране. */
 .dstrip{position:relative;height:52px;margin:16px 2px 2px}
 .dl{position:absolute;left:0;right:0;top:9px;height:3px;border-radius:99px;background:var(--hair);display:block}
-/* Пройденная часть дня окрашена от рассвета к ночи: полоса показывает не
-   только «сколько прошло», но и КАКОЕ это было время. */
-.dl.on{right:auto;background:linear-gradient(90deg,
-  color-mix(in srgb, var(--s-amber) 75%, transparent) 0%,
-  color-mix(in srgb, var(--s-amber) 55%, transparent) 40%,
-  color-mix(in srgb, var(--s-indigo) 60%, transparent) 100%)}
+/* Пройденная часть дня — просто чернила вполсилы. Разноцветные кружки на
+   ленте выглядели ёлкой: в приложении, где цвет означает здоровье, время
+   суток обязано быть тихим. */
+.dl.on{right:auto;background:var(--hair2)}
 .dcur{position:absolute;top:2px;width:2px;height:17px;border-radius:99px;background:var(--ink);
   transform:translateX(-1px);box-shadow:0 0 0 3px var(--surface)}
 .dcur:after{content:"";position:absolute;left:-3px;top:-3px;width:8px;height:8px;border-radius:99px;
@@ -592,15 +590,13 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
   justify-content:center;box-shadow:inset 0 0 0 2px var(--hair2)}
 .dn i .ico{width:12px;height:12px}
 .dn i b{font-size:11px;font-weight:800;color:var(--ink)}
-/* Знак времени суток вместо подписи: восход, солнце, луна */
-.dn em{font-style:normal;display:flex;color:var(--dtint,var(--ink4));opacity:.85}
+.dn em{font-style:normal;display:flex;color:var(--ink4)}
 .dn em .ico{width:14px;height:14px}
-.dn.sel em{opacity:1}
-/* Часть дня, где ещё есть дела, обведена своей краской времени */
-.dn.todo i{box-shadow:inset 0 0 0 2px color-mix(in srgb, var(--dtint) 55%, var(--hair2))}
 .dn.done i{background:var(--ink);box-shadow:none;color:var(--surface)}
-.dn.miss i{box-shadow:inset 0 0 0 2px var(--edge-dot)}
-.dn.miss i b{color:var(--edge)}
+.dn.todo i{box-shadow:inset 0 0 0 2px var(--ink)}
+.dn.nil i{width:13px;height:13px;margin:4px 0;box-shadow:inset 0 0 0 2px var(--hair)}
+
+.dn.done i{background:var(--ink);box-shadow:none;color:var(--surface)}
 .dn.nil i{width:13px;height:13px;margin:4px 0;box-shadow:inset 0 0 0 2px var(--hair)}
 
 
@@ -639,3 +635,23 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
 /* Точки сверх дневной рамки — чернилами, а не красным: перебор на один
    ужин это не «вне нормы», а просто факт дня. */
 .kdots i.over{background:var(--ink)}
+
+/* Весь день на главной: утро, день и вечер своими группами. Человек хочет
+   видеть, что он пьёт сегодня, целиком — и отмечать, не уходя с экрана. */
+.dgrp{border-top:1px solid var(--hair);margin-top:10px;padding-top:8px}
+.dgh{display:flex;align-items:baseline;gap:7px;padding-bottom:2px}
+.dgh b{font-size:13px;font-weight:740;letter-spacing:-0.2px}
+.dgh span{font-size:11px;color:var(--ink4)}
+.dgh em{font-style:normal;font-size:11px;color:var(--ink3);margin-left:auto}
+
+/* ── тарелка: одно кольцо и раскладка дня ────────────────────────
+   Кольцо показывает съеденное от дневной рамки и тут же — из чего эти
+   калории: белки, жиры, углеводы отдельными дугами. */
+.kring{position:relative;width:128px;min-width:128px;display:flex;align-items:center;justify-content:center}
+.kring b{position:absolute;text-align:center;font-size:24px;font-weight:800;letter-spacing:-1px;line-height:1}
+.kring b em{display:block;font-style:normal;font-size:10.5px;font-weight:650;color:var(--ink3);letter-spacing:0;margin-top:3px}
+.fwk{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.mrow{margin-bottom:11px}
+.mrow:last-of-type{margin-bottom:2px}
+.mrow.done .sm{color:var(--ink3)}
+.mrow.next .sm{color:var(--ink)}

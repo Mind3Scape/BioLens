@@ -5,7 +5,7 @@ import * as S from './store.js';
 import * as db from './db.js';
 import * as MED from './meds.js';
 import { icon } from './icons.js';
-import { esc, sparkline, chart, statusDot, statusTag, statusWord, toneVar, inkTone, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale, gauge, nutriRings, kcalDots } from './ui.js';
+import { esc, sparkline, chart, statusDot, statusTag, statusWord, toneVar, inkTone, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale, gauge, kcalRing } from './ui.js';
 import { markerTitle, markerGroup, MARKERS } from './markers.js';
 import { info } from './reference.js';
 import { tgUserName, tgUser, inTelegram } from './telegram.js';
@@ -151,10 +151,6 @@ function tileEl(t, i) {
    остальной день. */
 const AX_FROM = 6 * 60, AX_TO = 24 * 60;
 const axPos = (min) => Math.max(6, Math.min(94, ((min - AX_FROM) / (AX_TO - AX_FROM)) * 100));
-/* Краски времени суток: рассвет тёплый, ночь холодная. Здоровья они не
-   означают — это просто часы, и в легенде цветов так и написано. */
-const SLOT_TINT = { morning: '--s-amber', day: '--s-amber', evening: '--s-indigo', night: '--s-violet' };
-
 const minutesOf = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
 const nowMinutes = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
 const hhmm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -172,26 +168,38 @@ function todayBlock(app, date) {
   const byId = Object.fromEntries(plan.map(s => [s.id, s]));
   const now = nowMinutes();
   const nowPos = axPos(now);
-  const slot = MED.nowSlot(date);
-  const pending = slot ? slot.items.filter(i => !i.taken && !i.skipped) : [];
 
-  /* «На ночь» показываем, только если на эту ночь что-то назначено: у
-     большинства людей такого приёма нет, и пустой знак в конце ленты просто
-     занимал место. На экране лекарств все четыре части остаются — там они
-     нужны, чтобы поставить время курсу. */
-  const strip = MED.SLOTS.filter(s => s.id !== 'night' || (byId.night && byId.night.items.length));
-  const nodes = strip.map(s => {
-    const cur = byId[s.id];
-    const total = cur ? cur.items.length : 0;
-    const taken = cur ? cur.items.filter(i => i.taken).length : 0;
-    const state = !total ? 'nil' : taken === total ? 'done' : now > minutesOf(s.at) + 60 ? 'miss' : 'todo';
-    const left = axPos(minutesOf(s.at));
-    /* Подписей нет: восход, солнце, луна и луна со звёздами говорят про время
-       суток быстрее слова. Цифра в кружке — сколько ещё принять. */
-    return `<span class="dn ${state}${slot && slot.id === s.id ? ' sel' : ''}" style="left:${left.toFixed(1)}%;--dtint:var(${SLOT_TINT[s.id]})"
-      title="${esc(s.title)} · ${s.at}">
+  /* Три части: утро, день, вечер. «На ночь» на ленте нет вовсе — ночные
+     приёмы считаются вместе с вечером, а на экране лекарств у них своя
+     строка со своим временем. */
+  const STRIP = [
+    { id: 'morning', at: '08:00', icon: 'sunrise', ids: ['morning'] },
+    { id: 'day', at: '14:00', icon: 'sun', ids: ['day'] },
+    { id: 'evening', at: '20:00', icon: 'moon', ids: ['evening', 'night'] },
+  ];
+
+  const nodes = STRIP.map(sd => {
+    const items = sd.ids.flatMap(id => (byId[id] ? byId[id].items : []));
+    const total = items.length;
+    const taken = items.filter(i => i.taken).length;
+    const state = !total ? 'nil' : taken === total ? 'done' : 'todo';
+    const left = axPos(minutesOf(sd.at));
+    return `<span class="dn ${state}" style="left:${left.toFixed(1)}%">
       <i>${state === 'done' ? icon('check', 'ico s') : total ? `<b>${total - taken}</b>` : ''}</i>
-      <em>${icon(s.icon, 'ico s')}</em></span>`;
+      <em>${icon(sd.icon, 'ico s')}</em></span>`;
+  }).join('');
+
+  /* Весь день, а не только текущая часть: человек хочет видеть утро, день и
+     вечер разом и отмечать что угодно, не уходя с главной. */
+  const groups = MED.SLOTS.map(sl => {
+    const cur = byId[sl.id];
+    if (!cur || !cur.items.length) return '';
+    const taken = cur.items.filter(i => i.taken).length;
+    return `<div class="dgrp">
+      <div class="dgh"><b>${sl.title}</b><span>${sl.at}</span>
+        <em>${taken === cur.items.length ? 'принято' : `${cur.items.length - taken} из ${cur.items.length}`}</em></div>
+      ${cur.items.map(i => medRow(i, sl.id, date)).join('')}
+    </div>`;
   }).join('');
 
   return `<div class="cap">Сегодня</div>
@@ -206,10 +214,7 @@ function todayBlock(app, date) {
       <i class="dcur" style="left:${nowPos.toFixed(1)}%"></i>
       ${nodes}
     </div>
-    ${pending.length ? `<div class="divide"></div>
-      <div class="sm" style="margin-bottom:2px">${slot.title} · ${slot.at}</div>
-      ${slot.items.slice(0, 4).map(i => medRow(i, slot.id, date)).join('')}
-      ${slot.items.length > 4 ? `<div class="sm" style="padding-top:9px">и ещё ${slot.items.length - 4} в этой части дня</div>` : ''}` : ''}
+    ${groups}
   </div>`;
 }
 
@@ -1389,14 +1394,31 @@ export function medDetail(app) {
 
 export function food(app) {
   const today = S.todayISO();
-  const date = app.foodDate || today;
+  const week = weekDays(today);
+  const date = week.includes(app.foodDate) ? app.foodDate : today;
   const meals = S.mealsOn(date);
   const t = S.dayTotals(date);
   const tg = S.dayTargets();
   const goal = S.foodGoal();
+  const plan = S.mealPlan(date);
 
   let html = backHeadWide('Тарелка', date === today ? 'сегодня' : S.ruDate(date),
     `<button class="rnd dark" data-act="add-meal">${icon('camera', 'ico s')}</button>`);
+
+  /* Неделя теми же кольцами, что у лекарств: можно вернуться на любой день
+     и посмотреть, что было съедено. Раньше «Тарелка» знала только сегодня. */
+  html += `<div class="card">
+    <div class="fwk">${week.map((d, i) => {
+      const dt = S.dayTotals(d);
+      const future = d > today;
+      const pct = tg.kcal ? Math.min(1, dt.kcal / tg.kcal) : 0;
+      return `<button class="wd ${d === date ? 'on' : ''} ${d === today ? 'now' : ''} ${future ? 'fut' : ''}"
+        data-act="food-day" data-date="${d}">
+        <span class="wdn">${WD[i]}</span>
+        <span class="wdr">${dt.count ? ring(pct, { size: 30, stroke: 2.6, color: 'var(--teal)' }) : ''}<b>${+d.slice(8, 10)}</b></span>
+      </button>`;
+    }).join('')}</div>
+  </div>`;
 
   if (goal) {
     html += `<div class="card note tap" data-act="marker" data-key="${esc(goal.key)}">
@@ -1408,66 +1430,66 @@ export function food(app) {
   }
 
   if (!meals.length) {
-    html += emptyBlock('forkknife', 'Сфотографируй тарелку',
+    html += emptyBlock('forkknife', date === today ? 'Сфотографируй тарелку' : 'В этот день ничего не снято',
       goal
         ? `Я посчитаю калории, белки-жиры-углеводы и то, что важно для цели «${esc(goal.goal)}»: <b>насыщенные жиры, клетчатку, холестерин</b>.`
         : 'Я посчитаю калории, белки-жиры-углеводы, клетчатку и главные микроэлементы.',
-      `<button class="btn" data-act="add-meal">${icon('camera', 'ico s')}Снять еду</button>
-       <button class="btn ghost" data-act="pick-meal" style="margin-top:10px">Выбрать из галереи</button>`);
+      date === today ? `<button class="btn" data-act="add-meal">${icon('camera', 'ico s')}Снять еду</button>
+       <button class="btn ghost" data-act="pick-meal" style="margin-top:10px">Выбрать из галереи</button>` : '');
+    if (date === today) html += mealPlanCard(plan, app);
     return html;
   }
 
-  /* Полосы под кольцами говорят только о том, чего в кольцах НЕТ: белки,
-     жиры и углеводы уже нарисованы кругами, и повторять их числами — значит
-     сказать одно дважды. Здесь остаётся то, что важно для цели из анализов. */
+  /* Одно кольцо вместо четырёх: заполненная часть — съеденные калории, и она
+     сама разбита на белки, жиры и углеводы. Четыре кольца показывали четыре
+     доли от четырёх разных рамок, и суть в них не читалась. */
+  const kP = t.protein_g * 4, kF = t.fat_g * 9, kC = t.carbs_g * 4;
+  const parts = [
+    { kcal: kP, color: 'var(--s-indigo)' },
+    { kcal: kF, color: 'var(--s-violet)' },
+    { kcal: kC, color: 'var(--s-cyan)' },
+  ];
+  parts.frame = Math.max(tg.kcal, kP + kF + kC);
+  html += `<div class="card">
+    <div class="row" style="gap:16px;align-items:center">
+      <div class="kring">${kcalRing(parts, { size: 128, stroke: 13 })}
+        <b>${Math.round(t.kcal)}<em>из ${tg.kcal}</em></b></div>
+      <div class="grow">
+        <div class="mleg">
+          ${[['Белки', t.protein_g, kP, 'var(--s-indigo)'], ['Жиры', t.fat_g, kF, 'var(--s-violet)'], ['Углеводы', t.carbs_g, kC, 'var(--s-cyan)']]
+            .map(([label, g, kc, color]) => `<div class="ml">
+              <i style="background:${color}"></i>
+              <span class="mn">${label}</span>
+              <span class="mv">${Math.round(g)} г<em> · ${Math.round(kc)} ккал</em></span>
+            </div>`).join('')}
+        </div>
+        <div class="sm" style="margin-top:8px">${t.count} ${plural(t.count, 'приём', 'приёма', 'приёмов')}${date === today && plan.left ? ` · осталось ${plan.left} ккал` : ''}</div>
+      </div>
+    </div>
+  </div>`;
+
+  html += mealPlanCard(plan, app, date === today);
+
+  /* Полосы под кольцом — только то, чего в кольце нет: клетчатка, насыщенные
+     жиры и сахар. Белки-жиры-углеводы уже нарисованы дугами. */
   const focus = goal?.watch?.includes('sat_fat_g')
     ? [['sat_fat_g', 'Насыщенные жиры', 'г', tg.sat_fat_g, true], ['fiber_g', 'Клетчатка', 'г', tg.fiber_g, false], ['cholesterol_mg', 'Холестерин', 'мг', tg.cholesterol_mg, true]]
     : goal?.watch?.includes('sugar_g')
       ? [['sugar_g', 'Сахар', 'г', tg.sugar_g, true], ['fiber_g', 'Клетчатка', 'г', tg.fiber_g, false], ['sat_fat_g', 'Насыщенные жиры', 'г', tg.sat_fat_g, true]]
       : [['fiber_g', 'Клетчатка', 'г', tg.fiber_g, false], ['sat_fat_g', 'Насыщенные жиры', 'г', tg.sat_fat_g, true], ['sugar_g', 'Сахар', 'г', tg.sugar_g, true]];
 
-  /* День тарелки — четырьмя кольцами: калории снаружи, белки-жиры-углеводы
-     внутри. Голые числа «Б 57 · Ж 32 · У 120» ничего не говорят о том, много
-     это или мало; кольцо говорит это без единого слова. Под ними — точки,
-     где одна точка равна ста килокалориям: их можно пересчитать глазами. */
-  const macro = [
-    { key: 'kcal', label: 'Калории', v: t.kcal, target: tg.kcal, unit: 'ккал', color: 'var(--teal)' },
-    { key: 'protein_g', label: 'Белки', v: t.protein_g, target: tg.protein_g, unit: 'г', color: 'var(--s-indigo)' },
-    { key: 'fat_g', label: 'Жиры', v: t.fat_g, target: Math.round(tg.kcal * 0.3 / 9), unit: 'г', color: 'var(--s-violet)' },
-    { key: 'carbs_g', label: 'Углеводы', v: t.carbs_g, target: Math.round(tg.kcal * 0.5 / 4), unit: 'г', color: 'var(--s-cyan)' },
-  ];
-  html += `<div class="card">
-    <div class="row" style="gap:16px;align-items:center">
-      ${nutriRings(macro.map(m => ({ pct: m.target ? m.v / m.target : 0, color: m.color })), { size: 116, stroke: 9, gap: 4 })}
-      <div class="grow">
-        <div class="nm" style="font-size:22px;font-weight:800;letter-spacing:-0.8px">${Math.round(t.kcal)}<span class="unit" style="font-size:12px"> из ${tg.kcal} ккал</span></div>
-        <div class="mleg">${macro.slice(1).map(m => `<div class="ml">
-          <i style="background:${m.color}"></i>
-          <span class="mn">${m.label}</span>
-          <span class="mv">${Math.round(m.v)}<em> / ${m.target} ${m.unit}</em></span>
-        </div>`).join('')}</div>
-      </div>
-    </div>
-    ${kcalDots(t.kcal, tg.kcal)}
-    <div class="sm" style="margin-top:8px">${t.count} ${plural(t.count, 'приём', 'приёма', 'приёмов')} · одна точка — 100 ккал${t.kcal > tg.kcal ? ` · сверх дневной рамки ${Math.round(t.kcal - tg.kcal)} ккал` : ''}</div>
-    <div class="divide"></div>
-    ${focus.map(([k, label, unit, target, lowerBetter]) => {
-      const v = t[k] || 0;
-      // цветом отмечаем только перебор там, где меньше — лучше; остальное просто числа
-      const over = lowerBetter && v > target;
-      return `<div style="margin-bottom:11px">
-        <div class="row" style="margin-bottom:5px"><div class="grow sm" style="color:var(--ink)">${label}</div>
-          <div class="sm" style="${over ? 'color:var(--bad);font-weight:700' : ''}">${S.trim(v)} / ${target} ${unit}</div></div>
-        ${bar(v, target, { color: 'var(--ink)' })}
-      </div>`;
-    }).join('')}
-  </div>`;
+  html += `<div class="card">${focus.map(([k, label, unit, target, lowerBetter]) => {
+    const v = t[k] || 0;
+    const over = lowerBetter && v > target;
+    return `<div style="margin-bottom:11px">
+      <div class="row" style="margin-bottom:5px"><div class="grow sm" style="color:var(--ink)">${label}</div>
+        <div class="sm" style="${over ? 'color:var(--bad);font-weight:700' : ''}">${S.trim(v)} / ${target} ${unit}</div></div>
+      ${bar(v, target, { color: 'var(--ink)' })}
+    </div>`;
+  }).join('')}</div>`;
 
   if (app.aiFood) html += aiBlock('по цели', esc(app.aiFood).replace(/\n/g, '<br>'));
-  else if (db.settings().apiKey) html += `<div class="card flat"><button class="mini" data-act="food-feedback">${icon('sparkle', 'ico s')} Как я иду к цели сегодня?</button></div>`;
 
-  /* Блюда — одним списком, а не стопкой отдельных карточек: так же, как
-     показатели и документы. Одинаковые вещи должны выглядеть одинаково. */
   html += `<div class="cap">Что съел</div><div class="card list">`;
   for (const m of meals) {
     html += `<div class="it" data-act="meal" data-id="${esc(m.id)}">
@@ -1485,6 +1507,35 @@ export function food(app) {
 
   html += `<div class="disc">Оценка по фотографии приблизительная — ориентир, а не подсчёт.</div>`;
   return html;
+}
+
+/* Раскладка дня по приёмам пищи. Это не диета: обычная рамка «четверть на
+   завтрак, треть на обед, треть на ужин», разложенная по дневному ориентиру.
+   Ценность в одной строке — «на ужин остаётся 700 ккал». */
+function mealPlanCard(plan, app, isToday = true) {
+  const rows = plan.rows.map(r => {
+    const done = r.count > 0;
+    const pct = r.target ? Math.min(1, r.kcal / r.target) : 0;
+    return `<div class="mrow ${done ? 'done' : ''} ${plan.next && plan.next.id === r.id && isToday ? 'next' : ''}">
+      <div class="row" style="margin-bottom:5px">
+        <div class="grow sm" style="color:var(--ink);font-weight:650">${r.title}${plan.next && plan.next.id === r.id && isToday ? ' · впереди' : ''}</div>
+        <div class="sm">${done ? `${Math.round(r.kcal)} из ~${r.target} ккал` : `~${r.target} ккал`}</div>
+      </div>
+      ${bar(r.kcal, r.target, { color: 'var(--teal)', warn: false })}
+    </div>`;
+  }).join('');
+
+  const ask = db.settings().apiKey && isToday
+    ? `<button class="mini" data-act="meal-idea" style="margin-top:12px">${icon('sparkle', 'ico s')} ${app.aiMealBusy ? 'думаю…' : `Что съесть${plan.next ? ' на ' + plan.next.title.toLowerCase() : ' дальше'}?`}</button>`
+    : `<div class="sm" style="margin-top:11px">С ключом OpenRouter я подберу, что именно съесть — с учётом цели из анализов и записанных аллергий.</div>`;
+
+  return `<div class="cap">Как разложить день</div>
+  <div class="card">
+    ${rows}
+    ${app.aiMeal ? `<div class="divide"></div><div class="sm" style="font-size:13.5px;line-height:1.55;color:var(--ink2)">${esc(app.aiMeal).replace(/\n/g, '<br>')}</div>` : ''}
+    ${ask}
+    <div class="sm" style="margin-top:10px">Рамка простая: четверть дня на завтрак, треть на обед, треть на ужин. Это ориентир, а не назначение диеты.</div>
+  </div>`;
 }
 
 export function mealView(app) {

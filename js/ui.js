@@ -375,46 +375,40 @@ export function gauge(pct, { size = 96, stroke = 10 } = {}) {
   </svg>`;
 }
 
-/* ── кольца дня и точки-калории ──────────────────────────────────
-   Числа «1030 ккал, Б 57, Ж 32, У 120» — это таблица, а не картина: чтобы
-   понять, много ли это, приходится держать в голове дневные рамки. Кольца
-   показывают ДОЛЮ от рамки: заполнилось — значит, дневная норма набрана.
-   Каждое кольцо своего цвета, и ни один из них не из светофора: еда — это
-   дело, а не состояние здоровья. */
-export function nutriRings(parts, { size = 116, stroke = 9, gap = 4 } = {}) {
-  const c = size / 2;
-  const arcs = parts.map((p, i) => {
-    const r = c - stroke / 2 - i * (stroke + gap);
-    if (r <= stroke) return '';
-    const len = 2 * Math.PI * r;
-    const v = Math.max(0, Math.min(1, Number(p.pct) || 0));
-    /* Перебор не рисуем «больше круга»: кольцо просто закрывается целиком,
-       а о превышении говорит число рядом. Полный круг — это «дневная рамка
-       набрана», и врать этому кольцу нельзя. */
-    return `<circle cx="${c}" cy="${c}" r="${r.toFixed(1)}" fill="none" stroke="var(--hair)" stroke-width="${stroke}"/>
-      <circle cx="${c}" cy="${c}" r="${r.toFixed(1)}" fill="none" stroke="${p.color}" stroke-width="${stroke}"
-        stroke-linecap="round" stroke-dasharray="${len.toFixed(1)}"
-        stroke-dashoffset="${(len * (1 - v)).toFixed(1)}" transform="rotate(-90 ${c} ${c})"
-        style="transition:stroke-dashoffset .7s cubic-bezier(.22,1,.36,1)"/>`;
+/* ── кольцо дня ──────────────────────────────────────────────────
+   ОДНО кольцо, а не четыре. Заполненная часть — съеденные калории, и она
+   разбита на три дуги: сколько из этих калорий дали белки, жиры и углеводы.
+   Так одно кольцо отвечает сразу на два вопроса — «сколько съел» и «из чего
+   это было», — а четыре кольца не отвечали толком ни на один. */
+export function kcalRing(parts, { size = 132, stroke = 14 } = {}) {
+  const c = size / 2, r = (size - stroke) / 2;
+  const len = 2 * Math.PI * r;
+  const total = parts.reduce((n, p) => n + Math.max(0, p.kcal), 0);
+  const frame = Math.max(1, parts.frame || total);
+  let acc = 0;
+  const arcs = parts.map(p => {
+    const share = Math.max(0, p.kcal) / frame;
+    const seg = Math.min(1, share) * len;
+    const out = `<circle cx="${c}" cy="${c}" r="${r.toFixed(1)}" fill="none" stroke="${p.color}"
+      stroke-width="${stroke}" stroke-dasharray="${Math.max(0, seg - 1.5).toFixed(1)} ${(len - seg + 1.5).toFixed(1)}"
+      stroke-dashoffset="${(-acc).toFixed(1)}" transform="rotate(-90 ${c} ${c})"
+      style="transition:stroke-dasharray .7s cubic-bezier(.22,1,.36,1)"/>`;
+    acc += seg;
+    return out;
   }).join('');
-  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="display:block">${arcs}</svg>`;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="display:block">
+    <circle cx="${c}" cy="${c}" r="${r.toFixed(1)}" fill="none" stroke="var(--hair)" stroke-width="${stroke}"/>
+    ${arcs}
+  </svg>`;
 }
 
-/* Точки-калории: одна точка — сто килокалорий. Их можно пересчитать глазами,
-   и видно, сколько ещё «влезает» в день, — чего проценты не показывают. */
-export function kcalDots(kcal, target, { per = 100 } = {}) {
-  const total = Math.max(1, Math.round(target / per));
-  const full = Math.floor(kcal / per);
-  const cells = [];
-  for (let i = 0; i < Math.max(total, full); i++) {
-    cells.push(`<i class="${i < full ? (i < total ? 'on' : 'over') : ''}"></i>`);
-  }
-  return `<div class="kdots">${cells.join('')}</div>`;
-}
 
-export function bar(value, target, { color = 'var(--ink)' } = {}) {
+/* warn=false — там, где перебор не значит «вне нормы»: съесть на обед на
+   десять килокалорий больше рамки это не болезнь, а красный в этом
+   приложении занят состоянием здоровья. */
+export function bar(value, target, { color = 'var(--ink)', warn = true } = {}) {
   const pct = Math.max(0, Math.min(1.35, target ? value / target : 0));
-  const over = pct > 1;
+  const over = warn && pct > 1;
   return `<div class="prog" style="background:var(--hair)"><i style="width:${Math.min(100, pct * 100).toFixed(0)}%;background:${over ? 'var(--bad-dot)' : color}"></i></div>`;
 }
 

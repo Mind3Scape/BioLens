@@ -31,6 +31,8 @@ const app = {
   aiMarker: {},
   infoOpen: {},
   aiFood: '',
+  aiMeal: '',          // подсказка «что съесть» — живёт до конца дня
+  aiMealBusy: false,
   chat: [],
   asking: false,
   obStep: 1,
@@ -299,6 +301,12 @@ async function handleAction(el) {
       }
       break;
     }
+    case 'food-day': {
+      app.foodDate = el.dataset.date; app.aiMeal = '';
+      const pos = view.scrollTop; render(); $('#view').scrollTop = pos;
+      break;
+    }
+    case 'meal-idea': await mealIdea(); break;
     case 'med-day': {
       // переключение дня недели не должно дёргать экран
       app.medDate = el.dataset.date;
@@ -647,6 +655,39 @@ async function addMealFlow(useCamera) {
     if (db.settings().autoCloud) BK.scheduleCloudSave();
     foodFeedback();
   }
+}
+
+/* «Что съесть на ужин» — единственное место, где приложение говорит о еде
+   вперёд, а не назад. Поэтому в запрос идёт всё, что делает совет безопасным:
+   остаток дня, цель из анализов и ЗАПИСАННЫЕ АЛЛЕРГИИ. */
+async function mealIdea() {
+  const today = S.todayISO();
+  const plan = S.mealPlan(today);
+  const goal = S.foodGoal();
+  const pp = PP.state();
+  const next = plan.next;
+  app.aiMealBusy = true; render();
+  try {
+    const { text } = await chat({
+      model: db.settings().modelChat || db.settings().modelVision,
+      temperature: 0.5, maxTokens: 380,
+      messages: [
+        { role: 'system', content: 'Ты подсказываешь человеку, что съесть в ближайший приём пищи. ' + VOICE_RULES },
+        { role: 'user', content: [
+          `Сегодня съедено ${plan.eaten} ккал из ориентира ${plan.target}. Осталось примерно ${plan.left} ккал.`,
+          next ? `Ближайший приём пищи: ${next.title}, на него по рамке приходится около ${next.target} ккал.` : '',
+          S.dayFoodText(today),
+          goal ? `Цель по анализам: ${goal.text}.` : '',
+          pp.allergies.length ? `АЛЛЕРГИИ (ничего из этого предлагать нельзя): ${pp.allergies.map(a => a.name).join(', ')}.` : '',
+          pp.conditions.length ? `Хронические болезни: ${pp.conditions.map(a => a.name).join(', ')}.` : '',
+          '',
+          'Предложи два-три конкретных варианта блюда на этот приём пищи: обычная еда, которую можно купить или приготовить дома. У каждого — примерные калории и белок. Без добавок и БАДов. Коротко, до 60 слов.',
+        ].filter(Boolean).join('\n') },
+      ],
+    });
+    app.aiMeal = text.trim();
+  } catch (e) { app.aiMeal = ''; toast(e.message); }
+  app.aiMealBusy = false; render();
 }
 
 async function foodFeedback() {

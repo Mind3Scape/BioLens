@@ -792,6 +792,38 @@ export function dayTargets() {
   };
 }
 
+/* ── как разложить день ──────────────────────────────────────────
+   Не диета и не назначение: обычная рамка «завтрак четверть, обед треть,
+   ужин треть, перекусы остаток», разложенная на дневной ориентир по калориям.
+   Нужна затем, чтобы вечером было видно не «съедено 1030», а «на ужин
+   остаётся 700» — это единственное, что человеку в этот момент важно. */
+export const MEAL_SLOTS = [
+  { id: 'breakfast', title: 'Завтрак', share: 0.25, till: 11 },
+  { id: 'lunch',     title: 'Обед',    share: 0.35, till: 16 },
+  { id: 'dinner',    title: 'Ужин',    share: 0.30, till: 21 },
+  { id: 'snack',     title: 'Перекусы', share: 0.10, till: 24 },
+];
+
+export function mealPlan(date = MED.todayISO()) {
+  const tg = dayTargets();
+  const list = mealsOn(date);
+  const byId = Object.fromEntries(MEAL_SLOTS.map(m => [m.id, { ...m, target: Math.round(tg.kcal * m.share), kcal: 0, protein: 0, count: 0 }]));
+  for (const m of list) {
+    const h = new Date(m.at).getHours();
+    const slot = MEAL_SLOTS.find(x => h < x.till) || MEAL_SLOTS[3];
+    const b = byId[slot.id];
+    b.kcal += m.nutrition?.kcal || 0;
+    b.protein += m.nutrition?.protein_g || 0;
+    b.count++;
+  }
+  const eaten = list.reduce((n, m) => n + (m.nutrition?.kcal || 0), 0);
+  const rows = MEAL_SLOTS.map(m => byId[m.id]);
+  const hour = new Date().getHours();
+  // ближайший приём пищи, который ещё впереди — про него и говорим
+  const next = rows.find(r => !r.count && hour < r.till) || rows.find(r => !r.count) || null;
+  return { rows, eaten: Math.round(eaten), target: tg.kcal, left: Math.max(0, Math.round(tg.kcal - eaten)), next };
+}
+
 /* ── контекст для ИИ ─────────────────────────────────────────── */
 
 /* 120 показателей — это около 12 КБ текста, для любой современной модели пустяк.

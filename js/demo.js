@@ -148,12 +148,19 @@ export async function fillDemo() {
     { title: 'Курица с гречкой и салатом', kcal: 610, protein_g: 45, fat_g: 18, sat_fat_g: 4.6, carbs_g: 62, sugar_g: 5, fiber_g: 8, cholesterol_mg: 105, sodium_mg: 620,
       items: [{ name: 'куриная грудка', grams: 180 }, { name: 'гречка', grams: 200 }, { name: 'салат с маслом', grams: 120 }],
       micros: [{ name: 'Витамин B6', amount: 1.1, unit: 'мг', pct_dv: 65 }, { name: 'Калий', amount: 980, unit: 'мг', pct_dv: 21 }] },
+    { title: 'Творог с мёдом', kcal: 240, protein_g: 26, fat_g: 8, sat_fat_g: 5.0, carbs_g: 16, sugar_g: 14, fiber_g: 0, cholesterol_mg: 30, sodium_mg: 90,
+      items: [{ name: 'творог 5%', grams: 180 }, { name: 'мёд', grams: 15 }],
+      micros: [{ name: 'Кальций', amount: 210, unit: 'мг', pct_dv: 21 }] },
   ];
-  for (const m of meals) {
+  /* Час у блюда настоящий: завтрак утром, обед днём — иначе оба падают
+     в один приём пищи и раскладка дня выглядит сломанной. */
+  const atHour = (h) => { const d = new Date(); d.setHours(h, 20, 0, 0); return d.toISOString(); };
+  const hours = [8, 13, 15];   // завтрак, обед и перекус — ужин в примере ещё впереди
+  for (const [i, m] of meals.entries()) {
     const blobId = db.uid('b');
     await db.putBlob(blobId, await svgBlob(`<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="#efeee9"/><circle cx="150" cy="150" r="96" fill="#fff"/><circle cx="150" cy="150" r="62" fill="#e8e2d2"/><text x="150" y="285" font-size="13" fill="#8d909a" text-anchor="middle" font-family="sans-serif">демо-фото</text></svg>`));
     const meal = {
-      id: db.uid('f'), blobId, at: new Date().toISOString(), date: today, status: 'ready',
+      id: db.uid('f'), blobId, at: atHour(hours[i] || 21), date: today, status: 'ready',
       title: m.title, items: m.items, micros: m.micros, confidence: 0.7, demo: true,
       nutrition: { kcal: m.kcal, protein_g: m.protein_g, fat_g: m.fat_g, sat_fat_g: m.sat_fat_g, carbs_g: m.carbs_g, sugar_g: m.sugar_g, fiber_g: m.fiber_g, cholesterol_mg: m.cholesterol_mg, sodium_mg: m.sodium_mg },
     };
