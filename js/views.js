@@ -5,7 +5,7 @@ import * as S from './store.js';
 import * as db from './db.js';
 import * as MED from './meds.js';
 import { icon } from './icons.js';
-import { esc, sparkline, chart, statusDot, statusTag, statusWord, toneVar, inkTone, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale, gauge } from './ui.js';
+import { esc, sparkline, chart, statusDot, statusTag, statusWord, toneVar, inkTone, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale, gauge, nutriRings, kcalDots } from './ui.js';
 import { markerTitle, markerGroup, MARKERS } from './markers.js';
 import { info } from './reference.js';
 import { tgUserName, tgUser, inTelegram } from './telegram.js';
@@ -151,6 +151,10 @@ function tileEl(t, i) {
    остальной день. */
 const AX_FROM = 6 * 60, AX_TO = 24 * 60;
 const axPos = (min) => Math.max(6, Math.min(94, ((min - AX_FROM) / (AX_TO - AX_FROM)) * 100));
+/* Краски времени суток: рассвет тёплый, ночь холодная. Здоровья они не
+   означают — это просто часы, и в легенде цветов так и написано. */
+const SLOT_TINT = { morning: '--s-amber', day: '--s-amber', evening: '--s-indigo', night: '--s-violet' };
+
 const minutesOf = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
 const nowMinutes = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
 const hhmm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -171,7 +175,12 @@ function todayBlock(app, date) {
   const slot = MED.nowSlot(date);
   const pending = slot ? slot.items.filter(i => !i.taken && !i.skipped) : [];
 
-  const nodes = MED.SLOTS.map(s => {
+  /* «На ночь» показываем, только если на эту ночь что-то назначено: у
+     большинства людей такого приёма нет, и пустой знак в конце ленты просто
+     занимал место. На экране лекарств все четыре части остаются — там они
+     нужны, чтобы поставить время курсу. */
+  const strip = MED.SLOTS.filter(s => s.id !== 'night' || (byId.night && byId.night.items.length));
+  const nodes = strip.map(s => {
     const cur = byId[s.id];
     const total = cur ? cur.items.length : 0;
     const taken = cur ? cur.items.filter(i => i.taken).length : 0;
@@ -179,7 +188,7 @@ function todayBlock(app, date) {
     const left = axPos(minutesOf(s.at));
     /* Подписей нет: восход, солнце, луна и луна со звёздами говорят про время
        суток быстрее слова. Цифра в кружке — сколько ещё принять. */
-    return `<span class="dn ${state}${slot && slot.id === s.id ? ' sel' : ''}" style="left:${left.toFixed(1)}%"
+    return `<span class="dn ${state}${slot && slot.id === s.id ? ' sel' : ''}" style="left:${left.toFixed(1)}%;--dtint:var(${SLOT_TINT[s.id]})"
       title="${esc(s.title)} · ${s.at}">
       <i>${state === 'done' ? icon('check', 'ico s') : total ? `<b>${total - taken}</b>` : ''}</i>
       <em>${icon(s.icon, 'ico s')}</em></span>`;
@@ -1408,20 +1417,39 @@ export function food(app) {
     return html;
   }
 
+  /* Полосы под кольцами говорят только о том, чего в кольцах НЕТ: белки,
+     жиры и углеводы уже нарисованы кругами, и повторять их числами — значит
+     сказать одно дважды. Здесь остаётся то, что важно для цели из анализов. */
   const focus = goal?.watch?.includes('sat_fat_g')
     ? [['sat_fat_g', 'Насыщенные жиры', 'г', tg.sat_fat_g, true], ['fiber_g', 'Клетчатка', 'г', tg.fiber_g, false], ['cholesterol_mg', 'Холестерин', 'мг', tg.cholesterol_mg, true]]
     : goal?.watch?.includes('sugar_g')
-      ? [['sugar_g', 'Сахар', 'г', tg.sugar_g, true], ['fiber_g', 'Клетчатка', 'г', tg.fiber_g, false], ['carbs_g', 'Углеводы', 'г', 250, true]]
-      : [['protein_g', 'Белок', 'г', tg.protein_g, false], ['fiber_g', 'Клетчатка', 'г', tg.fiber_g, false], ['sat_fat_g', 'Насыщенные жиры', 'г', tg.sat_fat_g, true]];
+      ? [['sugar_g', 'Сахар', 'г', tg.sugar_g, true], ['fiber_g', 'Клетчатка', 'г', tg.fiber_g, false], ['sat_fat_g', 'Насыщенные жиры', 'г', tg.sat_fat_g, true]]
+      : [['fiber_g', 'Клетчатка', 'г', tg.fiber_g, false], ['sat_fat_g', 'Насыщенные жиры', 'г', tg.sat_fat_g, true], ['sugar_g', 'Сахар', 'г', tg.sugar_g, true]];
 
-  /* Итог дня — одной строкой под числом, без третьей колонки справа: она
-     не помещалась и разрывала «2 приёма» пополам. */
+  /* День тарелки — четырьмя кольцами: калории снаружи, белки-жиры-углеводы
+     внутри. Голые числа «Б 57 · Ж 32 · У 120» ничего не говорят о том, много
+     это или мало; кольцо говорит это без единого слова. Под ними — точки,
+     где одна точка равна ста килокалориям: их можно пересчитать глазами. */
+  const macro = [
+    { key: 'kcal', label: 'Калории', v: t.kcal, target: tg.kcal, unit: 'ккал', color: 'var(--teal)' },
+    { key: 'protein_g', label: 'Белки', v: t.protein_g, target: tg.protein_g, unit: 'г', color: 'var(--s-indigo)' },
+    { key: 'fat_g', label: 'Жиры', v: t.fat_g, target: Math.round(tg.kcal * 0.3 / 9), unit: 'г', color: 'var(--s-violet)' },
+    { key: 'carbs_g', label: 'Углеводы', v: t.carbs_g, target: Math.round(tg.kcal * 0.5 / 4), unit: 'г', color: 'var(--s-cyan)' },
+  ];
   html += `<div class="card">
-    <div class="row">
-      ${ring(t.kcal / tg.kcal, { size: 52, color: 'var(--teal)' })}
-      <div class="grow"><div class="nm" style="font-size:17px">${Math.round(t.kcal)} ккал <span class="unit">из ${tg.kcal}</span></div>
-        <div class="sm">Б ${Math.round(t.protein_g)} · Ж ${Math.round(t.fat_g)} · У ${Math.round(t.carbs_g)} · ${t.count} ${plural(t.count, 'приём', 'приёма', 'приёмов')}</div></div>
+    <div class="row" style="gap:16px;align-items:center">
+      ${nutriRings(macro.map(m => ({ pct: m.target ? m.v / m.target : 0, color: m.color })), { size: 116, stroke: 9, gap: 4 })}
+      <div class="grow">
+        <div class="nm" style="font-size:22px;font-weight:800;letter-spacing:-0.8px">${Math.round(t.kcal)}<span class="unit" style="font-size:12px"> из ${tg.kcal} ккал</span></div>
+        <div class="mleg">${macro.slice(1).map(m => `<div class="ml">
+          <i style="background:${m.color}"></i>
+          <span class="mn">${m.label}</span>
+          <span class="mv">${Math.round(m.v)}<em> / ${m.target} ${m.unit}</em></span>
+        </div>`).join('')}</div>
+      </div>
     </div>
+    ${kcalDots(t.kcal, tg.kcal)}
+    <div class="sm" style="margin-top:8px">${t.count} ${plural(t.count, 'приём', 'приёма', 'приёмов')} · одна точка — 100 ккал${t.kcal > tg.kcal ? ` · сверх дневной рамки ${Math.round(t.kcal - tg.kcal)} ккал` : ''}</div>
     <div class="divide"></div>
     ${focus.map(([k, label, unit, target, lowerBetter]) => {
       const v = t[k] || 0;
@@ -1880,8 +1908,16 @@ export function colorsView(app) {
   <div class="grp">
     ${row('var(--blue)', 'Синий — приём лекарств', 'сколько принято сегодня')}
     ${row('var(--violet)', 'Фиолетовый — изученность', 'сколько базовых анализов сдано')}
-    ${row('var(--teal)', 'Бирюзовый — еда', 'калории и БЖУ за день')}
+    ${row('var(--teal)', 'Бирюзовый — калории', 'внешнее кольцо на «Тарелке» и точки по 100 ккал')}
+    ${row('var(--s-indigo)', 'Индиго — белки', 'второе кольцо тарелки')}
+    ${row('var(--s-violet)', 'Сиреневый — жиры', 'третье кольцо тарелки')}
+    ${row('var(--s-cyan)', 'Циан — углеводы', 'внутреннее кольцо тарелки')}
     ${row('var(--ink)', 'Чернила — сделано', 'отмеченный приём, закрытый день, слово ИИ')}
+  </div>
+  <div class="cap">Время суток · лента дня на главной</div>
+  <div class="grp">
+    ${row('var(--s-amber)', 'Тёплый — утро и день', 'знак восхода и солнца, начало полосы дня')}
+    ${row('var(--s-indigo)', 'Холодный — вечер', 'знак луны, конец полосы дня')}
   </div>`;
 
   html += `<div class="cap">Системы организма · просто различают</div>

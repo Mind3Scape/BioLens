@@ -101,10 +101,18 @@ export async function fillDemo() {
   /* Лист назначений — чтобы в примере было видно, как приём лекарств
      раскладывается по утрам и вечерам сам, с фотографии. */
   const rxStart = MED.addDays(S.todayISO(), -4);
+  /* Курсов нарочно много и все разные: три раза в день, через день, только
+     на ночь, «по требованию» без времени. На таком наборе сразу видно, как
+     день выглядит загруженным и что происходит с лентой и неделей. */
   const RX = [
     { name: 'Урсосан', dose: '250 мг', form: 'капсула', slots: ['morning', 'evening'], durationDays: 30, food: 'after', freqText: '2 раза в день', instructions: 'запивать водой' },
     { name: 'Витамин D3', dose: '5000 МЕ', form: 'капли', slots: ['morning'], durationDays: 60, food: 'with', freqText: '1 раз в день' },
     { name: 'Омепразол', dose: '20 мг', form: 'капсула', slots: ['morning'], durationDays: 14, food: 'before', freqText: 'утром натощак' },
+    { name: 'Амоксициллин', dose: '500 мг', form: 'таблетка', slots: ['morning', 'day', 'evening'], durationDays: 7, food: 'after', freqText: '3 раза в день, 7 дней' },
+    { name: 'Магний B6', dose: '2 таблетки', form: 'таблетка', slots: ['day', 'night'], durationDays: 30, food: 'with', freqText: 'утром и на ночь' },
+    { name: 'Аторвастатин', dose: '10 мг', form: 'таблетка', slots: ['night'], durationDays: 90, freqText: 'на ночь' },
+    { name: 'Мовалис', dose: '7.5 мг', form: 'таблетка', slots: ['day'], everyNDays: 2, durationDays: 20, food: 'after', freqText: 'через день после еды' },
+    { name: 'Нурофен', dose: '400 мг', form: 'таблетка', slots: [], freqText: 'при головной боли, не чаще 3 раз в сутки' },
   ];
   {
     const blobId = db.uid('b');
