@@ -6,7 +6,11 @@
                  предупреждениями поперёк главной.
 
    Правило для плиток одно: плитка — это НАБЛЮДЕНИЕ, а не кнопка. Если сказать
-   нечего, плитки нет. Пустых карточек с прочерками здесь не бывает. */
+   нечего, плитки нет. Пустых карточек с прочерками здесь не бывает.
+
+   У каждой плитки свой знак: таблетка, вилка, часы. Шесть одинаковых
+   прямоугольников с цифрами глаз не различает — за них цепляется значок,
+   а не заголовок мелкими буквами. */
 
 import * as S from './store.js';
 import * as MED from './meds.js';
@@ -29,8 +33,8 @@ export function tiles(app) {
   if (d.total) {
     const slot = MED.nowSlot(today);
     out.push({
-      id: 'meds',
-      kind: 'приём сегодня',
+      id: 'meds', icon: 'pill',
+      kind: 'приём',
       value: `${d.taken}`, suffix: `/${d.total}`,
       title: d.left ? `Осталось ${d.left}` : 'Всё принято',
       sub: d.left && slot ? `ближайшее — ${slot.title.toLowerCase()}, ${slot.at}` : 'сегодня можно выдохнуть',
@@ -47,8 +51,8 @@ export function tiles(app) {
   const tg = S.dayTargets();
   const goal = S.foodGoal();
   out.push({
-    id: 'food',
-    kind: 'съедено сегодня',
+    id: 'food', icon: 'forkknife',
+    kind: 'съедено',
     value: `${Math.round(t.kcal)}`, suffix: 'ккал',
     title: t.count
       ? `${t.count} ${t.count === 1 ? 'приём' : t.count < 5 ? 'приёма' : 'приёмов'} пищи`
@@ -67,7 +71,7 @@ export function tiles(app) {
     || list.filter(m => !m.stale && m.status === 'edge')[0];
   if (bad) {
     out.push({
-      id: 'out',
+      id: 'out', icon: 'warning',
       kind: bad.status === 'out' ? 'вне нормы' : 'у границы',
       value: S.trim(bad.last.value), suffix: bad.unit,
       title: bad.title,
@@ -85,7 +89,7 @@ export function tiles(app) {
     const months = Math.max(1, Math.round(sh.gapDays / 30));
     const better = S.changeTone(sh.key, sh.base.value, sh.last.value, sh.last.refLow, sh.last.refHigh);
     out.push({
-      id: 'shift',
+      id: 'shift', icon: 'chartline',
       kind: better === 'better' ? 'стало лучше' : better === 'worse' ? 'ушло дальше' : 'сдвинулось',
       value: `${diff > 0 ? '+' : ''}${S.trim(diff)}`, suffix: sh.unit,
       title: sh.title,
@@ -102,7 +106,7 @@ export function tiles(app) {
   if (list.length) {
     const blank = cov.blank.length;
     out.push({
-      id: 'coverage',
+      id: 'coverage', icon: 'body',
       kind: 'изучено',
       value: `${cov.known}`, suffix: `/${cov.total}`,
       title: blank ? `${blank} ${blank === 1 ? 'система' : blank < 5 ? 'системы' : 'систем'} без единого анализа` : 'все системы затронуты',
@@ -118,8 +122,8 @@ export function tiles(app) {
   if (due) {
     const months = Math.max(1, Math.floor(due.daysOld / 30));
     out.push({
-      id: 'due',
-      kind: 'пора пересдать',
+      id: 'due', icon: 'clock',
+      kind: 'пересдать',
       value: `${months}`, suffix: RU_MONTH(months),
       title: due.title,
       sub: `последний раз ${S.ruShort(due.last.date)}`,
@@ -132,8 +136,8 @@ export function tiles(app) {
   const streak = takeStreak(today);
   if (streak >= 3) {
     out.push({
-      id: 'streak',
-      kind: 'без пропусков',
+      id: 'streak', icon: 'fire',
+      kind: 'подряд',
       value: `${streak}`, suffix: streak === 1 ? 'день' : streak < 5 ? 'дня' : 'дней',
       title: 'Принимаешь по расписанию',
       sub: 'считаю только то, что отмечено',

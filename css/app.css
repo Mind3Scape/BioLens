@@ -412,8 +412,18 @@ html[data-theme="dark"] .tile .ph{background:#F2F2F0}
   display:flex;flex-direction:column;animation:tin .34s cubic-bezier(.22,1,.36,1) both}
 @keyframes tin{from{opacity:0;transform:translateY(9px) scale(.985)}to{opacity:1;transform:none}}
 .tile2:active{transform:scale(0.98)}
+/* Знак плитки. Шесть одинаковых прямоугольников с цифрами глаз не различает —
+   за них цепляется значок в кружке своего цвета, а не заголовок мелкими
+   буквами. Кружок тот же, что у систем организма: один приём на всё. */
 .tile2 .tk{font-size:9.5px;font-weight:800;letter-spacing:0.7px;text-transform:uppercase;color:var(--accent,var(--ink4));
-  display:flex;align-items:center;gap:5px;min-height:12px}
+  display:flex;align-items:center;gap:6px;min-height:22px;padding-right:24px}
+.tile2 .tk span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tic{width:22px;height:22px;min-width:22px;border-radius:99px;display:flex;align-items:center;justify-content:center;
+  color:var(--accent,var(--ink3));background:color-mix(in srgb, var(--accent, var(--ink3)) 14%, transparent)}
+.tic .ico{width:13px;height:13px}
+.tic.sm-ic{width:20px;height:20px;min-width:20px}
+.tic.sm-ic .ico{width:11px;height:11px}
+.tile2.wide .tic{background:rgba(255,255,255,0.14);color:#fff}
 .tile2 .tk .ico{width:12px;height:12px}
 .tile2 .tv{font-size:27px;font-weight:800;letter-spacing:-1.1px;line-height:1;margin-top:8px;color:var(--accent,var(--ink))}
 /* Словесное значение вместо числа — своим кеглем: «снизить ЛПНП» в 27 пунктов
@@ -424,7 +434,7 @@ html[data-theme="dark"] .tile .ph{background:#F2F2F0}
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .tile2 .td{font-size:10.5px;color:var(--ink3);line-height:1.35;margin-top:3px;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.tile2 .tsp{position:absolute;right:10px;top:9px;color:var(--accent,var(--ink3));display:flex;opacity:.9}
+.tile2 .tsp{position:absolute;right:10px;top:11px;color:var(--accent,var(--ink3));display:flex;opacity:.9}
 .t-out{--accent:var(--bad);background:var(--bad-soft)}
 .t-edge{--accent:var(--edge);background:var(--edge-soft)}
 .t-ok{--accent:var(--ok);background:var(--ok-soft)}
@@ -622,8 +632,10 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
    Кольцо показывает долю от дневной рамки, точка — сто килокалорий.
    Ни один из этих цветов не из светофора: еда — это дело, а не диагноз. */
 .mleg{margin-top:9px;display:flex;flex-direction:column;gap:5px}
-.ml{display:flex;align-items:center;gap:7px;font-size:12px}
-.ml i{width:9px;height:9px;min-width:9px;border-radius:99px;display:block}
+.ml{display:flex;align-items:center;gap:8px;font-size:12px}
+/* У белков, жиров и углеводов свои знаки: яйцо, авокадо, хлеб. Цветной
+   кружок говорил, какая дуга кольца чья, но не говорил, что это за еда. */
+.ml .tic{background:color-mix(in srgb, var(--accent) 15%, transparent);color:var(--accent)}
 .ml .mn{flex:1;min-width:0;color:var(--ink2);font-weight:600}
 .ml .mv{font-weight:750;letter-spacing:-0.2px}
 .ml .mv em{font-style:normal;font-weight:600;color:var(--ink3)}
@@ -641,6 +653,8 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
 .dgrp{border-top:1px solid var(--hair);margin-top:10px;padding-top:8px}
 .dgh{display:flex;align-items:baseline;gap:7px;padding-bottom:2px}
 .dgh b{font-size:13px;font-weight:740;letter-spacing:-0.2px}
+.dgh .tic,.mrow .tic{background:var(--field);color:var(--ink3)}
+.mleg .tic{background:color-mix(in srgb, var(--accent) 15%, transparent);color:var(--accent)}
 .dgh span{font-size:11px;color:var(--ink4)}
 .dgh em{font-style:normal;font-size:11px;color:var(--ink3);margin-left:auto}
 

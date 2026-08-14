@@ -132,7 +132,7 @@ function tileEl(t, i) {
     : t.ring != null ? `<div class="tsp">${ring(t.ring, { size: 24, stroke: 3.4, color: 'currentColor' })}</div>`
     : '';
   return `<button class="tile2 t-${t.tone}" style="animation-delay:${Math.min(i, 6) * 28}ms" data-act="${esc(t.act)}"${attrs}>
-    <div class="tk">${esc(t.kind)}</div>
+    <div class="tk">${t.icon ? `<span class="tic">${icon(t.icon, 'ico s')}</span>` : ''}<span>${esc(t.kind)}</span></div>
     ${corner}
     <div class="tv${t.small ? ' short' : ''}">${esc(t.value)}${t.suffix ? `<span class="ts">${esc(t.suffix)}</span>` : ''}</div>
     <div class="tt">${esc(t.title)}</div>
@@ -196,7 +196,7 @@ function todayBlock(app, date) {
     if (!cur || !cur.items.length) return '';
     const taken = cur.items.filter(i => i.taken).length;
     return `<div class="dgrp">
-      <div class="dgh"><b>${sl.title}</b><span>${sl.at}</span>
+      <div class="dgh"><span class="tic sm-ic">${icon(sl.icon, 'ico s')}</span><b>${sl.title}</b><span>${sl.at}</span>
         <em>${taken === cur.items.length ? 'принято' : `${cur.items.length - taken} из ${cur.items.length}`}</em></div>
       ${cur.items.map(i => medRow(i, sl.id, date)).join('')}
     </div>`;
@@ -1456,9 +1456,9 @@ export function food(app) {
         <b>${Math.round(t.kcal)}<em>из ${tg.kcal}</em></b></div>
       <div class="grow">
         <div class="mleg">
-          ${[['Белки', t.protein_g, kP, 'var(--s-indigo)'], ['Жиры', t.fat_g, kF, 'var(--s-violet)'], ['Углеводы', t.carbs_g, kC, 'var(--s-cyan)']]
-            .map(([label, g, kc, color]) => `<div class="ml">
-              <i style="background:${color}"></i>
+          ${[['Белки', t.protein_g, kP, 'var(--s-indigo)', 'egg'], ['Жиры', t.fat_g, kF, 'var(--s-violet)', 'avocado'], ['Углеводы', t.carbs_g, kC, 'var(--s-cyan)', 'bread']]
+            .map(([label, g, kc, color, ic]) => `<div class="ml">
+              <span class="tic sm-ic" style="--accent:${color}">${icon(ic, 'ico s')}</span>
               <span class="mn">${label}</span>
               <span class="mv">${Math.round(g)} г<em> · ${Math.round(kc)} ккал</em></span>
             </div>`).join('')}
@@ -1509,6 +1509,10 @@ export function food(app) {
   return html;
 }
 
+/* Завтрак-обед-ужин помечены теми же знаками, что утро-день-вечер на ленте
+   лекарств: один язык времени на всё приложение. */
+const MEAL_ICON = { breakfast: 'sunrise', lunch: 'sun', dinner: 'moon', snack: 'forkknife' };
+
 /* Раскладка дня по приёмам пищи. Это не диета: обычная рамка «четверть на
    завтрак, треть на обед, треть на ужин», разложенная по дневному ориентиру.
    Ценность в одной строке — «на ужин остаётся 700 ккал». */
@@ -1517,7 +1521,8 @@ function mealPlanCard(plan, app, isToday = true) {
     const done = r.count > 0;
     const pct = r.target ? Math.min(1, r.kcal / r.target) : 0;
     return `<div class="mrow ${done ? 'done' : ''} ${plan.next && plan.next.id === r.id && isToday ? 'next' : ''}">
-      <div class="row" style="margin-bottom:5px">
+      <div class="row" style="margin-bottom:5px;gap:7px">
+        <span class="tic sm-ic">${icon(MEAL_ICON[r.id], 'ico s')}</span>
         <div class="grow sm" style="color:var(--ink);font-weight:650">${r.title}${plan.next && plan.next.id === r.id && isToday ? ' · впереди' : ''}</div>
         <div class="sm">${done ? `${Math.round(r.kcal)} из ~${r.target} ккал` : `~${r.target} ккал`}</div>
       </div>
