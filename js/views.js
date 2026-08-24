@@ -76,7 +76,7 @@ export function summary(app) {
   }
 
   const nn = notices(app).length;
-  let html = head('Здоровье', dayTitle(today), bellBtn(nn) + avatarBtn + addAnyBtn);
+  let html = head('Сегодня', dayTitle(today), bellBtn(nn) + avatarBtn + addAnyBtn);
 
   /* Разбор идёт прямо сейчас — это не предупреждение, а работа на глазах.
      Одна тонкая строка, а не карточка во всю высоту. */
@@ -1402,7 +1402,9 @@ export function food(app) {
   const goal = S.foodGoal();
   const plan = S.mealPlan(date);
 
-  let html = backHeadWide('Тарелка', date === today ? 'сегодня' : S.ruDate(date),
+  /* Еда переехала в нижние двери, поэтому шапка корневая: возвращаться отсюда
+     некуда, а стрелка «назад» в корне экрана — обещание, которого нет. */
+  let html = head('Еда', date === today ? 'сегодня' : S.ruDate(date),
     `<button class="rnd dark" data-act="add-meal">${icon('camera', 'ico s')}</button>`);
 
   /* Неделя теми же кольцами, что у лекарств: можно вернуться на любой день
@@ -2116,16 +2118,18 @@ export function onboarding(app) {
 /* ══ ТАБ-БАР ═════════════════════════════════════════════════ */
 
 export function tabbar(active) {
-  /* Три двери, а не пять. День, тело, разговор — этого хватает, чтобы описать
-     всё приложение. Лекарства, тарелка и хроника открываются с главной: они
-     нужны в свой момент, а не постоянно висят внизу экрана.
+  /* Четыре двери: день, еда, здоровье, разговор. Еда переехала вниз из
+     главной — её открывают по нескольку раз в день, и держать её в глубине
+     было дороже, чем отдать ей дверь. Лекарства, хроника и документ
+     по-прежнему живут в стеке: туда заходят в свой момент.
 
      Подпись горит только у той двери, в которой ты стоишь, — панель остаётся
      узкой пилюлей и не отнимает у содержимого целую строку. */
   const items = [
-    ['summary', 'heartbeat', 'Здоровье'],
-    ['markers', 'body', 'Тело'],
-    ['ask', 'chat', 'Спросить'],
+    ['summary', 'house', 'Главная'],
+    ['food', 'bowlfood', 'Еда'],
+    ['markers', 'heartbeat', 'Здоровье'],
+    ['ask', 'chat', 'Чат'],
   ];
   return `<div class="tabs"><div class="dock" id="dock">
     ${items.map(([id, ic, label]) => `<button class="tab ${active === id ? 'on' : ''}" data-act="tab" data-tab="${id}">${icon(ic)}<span>${label}</span></button>`).join('')}

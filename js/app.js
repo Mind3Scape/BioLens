@@ -42,10 +42,10 @@ const app = {
 };
 window.__biolens = app;
 
-/* Три двери внизу: день, тело, разговор. Лекарства, тарелка, хроника и
+/* Четыре двери внизу: день, еда, здоровье, разговор. Лекарства, хроника и
    уведомления — это места, куда заходят в свой момент и возвращаются назад,
    поэтому они лежат в стеке, а не в доке. */
-const TABS = ['summary', 'markers', 'ask'];
+const TABS = ['summary', 'food', 'markers', 'ask'];
 
 /* ── рендер ──────────────────────────────────────────────────── */
 
@@ -82,7 +82,7 @@ function render() {
   /* Подсвечиваем вкладку только там, где экран действительно ей принадлежит.
      Хроника, документ и «для врача» ничьи — гореть «Здоровью», пока ты не там,
      значит врать про своё же положение. */
-  const OWNER = { marker: 'markers', system: 'markers', 'markers-all': 'markers', gaps: 'markers' };
+  const OWNER = { marker: 'markers', system: 'markers', 'markers-all': 'markers', gaps: 'markers', meal: 'food' };
   $('#tabbar').innerHTML = s.onboarded ? V.tabbar(OWNER[app.route] || app.route) : '';
   // док пересобирается вместе с экраном — сжатое состояние надо вернуть на место
   if (dockMini) $('#dock')?.classList.add('mini');
