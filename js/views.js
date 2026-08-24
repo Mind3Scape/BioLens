@@ -1593,10 +1593,16 @@ export function ask(app) {
       `<button class="chip" data-act="ask-preset" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>`;
   }
 
-  html += msgs.map(m => `<div class="bubble ${m.role === 'user' ? 'me' : 'ai'}">${esc(m.text)}</div>`).join('');
+  /* Пустой текст в пузырь не пускаем: белый прямоугольник без единой буквы
+     человек читает как поломку приложения, а не как молчание модели. */
+  html += msgs.map(m => {
+    const text = String(m.text || '').trim();
+    return `<div class="bubble ${m.role === 'user' ? 'me' : 'ai'}">${
+      text ? esc(text) : `<span style="color:var(--ink3)">модель ничего не прислала — спроси ещё раз</span>`}</div>`;
+  }).join('');
   if (app.asking) html += `<div class="bubble ai"><div class="row"><div class="spin"></div><span class="sm">думаю…</span></div></div>`;
-  // именно здесь человек спрашивает «что у меня?» — молчать об ограничениях нельзя
-  html += `<div class="disc">Отвечаю только по числам из твоего архива. Это не приём врача: диагнозов не ставлю и лечение не назначаю. Если сейчас плохо — одышка, боль, спутанность — это вопрос к скорой, а не к приложению.</div>`;
+  // одной фразой: что это такое и чего от него не ждать
+  html += `<div class="disc">Помогаю разобраться в твоих анализах: читаю числа из архива и прикидываю, что они могут значить. Диагнозов не ставлю и могу ошибаться.</div>`;
 
   html += `<div class="composer">
     <input type="text" id="askInput" placeholder="Спроси о своей истории…" style="flex:1">

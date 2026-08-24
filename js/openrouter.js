@@ -105,7 +105,7 @@ export async function chat({ messages, model, schema = null, temperature = 0.2, 
 
   const thinks = thinksBeforeAnswer(model);
   const body = { model, messages, temperature, max_tokens: thinks ? maxTokens + THINK_ROOM : maxTokens };
-  if (thinks) body.reasoning = { effort: 'low', exclude: true };
+  if (thinks) body.reasoning = { effort: 'low' };   // не exclude: из рассуждения достаём ответ, если поле ответа пустое
   if (schema) body.response_format = { type: 'json_schema', json_schema: { name: 'result', strict: true, schema } };
   const timeout = thinks ? TIMEOUT_THINKING : TIMEOUT;
 
@@ -133,16 +133,14 @@ export async function chat({ messages, model, schema = null, temperature = 0.2, 
   const j = await r.json();
   const choice = j.choices?.[0];
   const msg = choice?.message;
-  const text = typeof msg?.content === 'string'
-    ? msg.content
-    : (Array.isArray(msg?.content) ? msg.content.map(p => p.text || '').join('') : '');
+  const text = pickText(msg);
 
   /* Ответ, обрезанный по лимиту токенов, — это половина таблицы бланка.
      Раньше он падал безымянной ошибкой разбора JSON. */
   if (choice?.finish_reason === 'length') {
     throw new Error('Ответ модели оборвался на середине — в бланке слишком много строк. Сними его двумя кадрами или возьми модель помощнее.');
   }
-  if (!text.trim()) throw new Error('Модель вернула пустой ответ');
+  if (!text) throw new Error('Модель промолчала — ни ответа, ни размышления. Спроси ещё раз или смени модель для текстов в настройках.');
   return { text, usage: j.usage || null, modelUsed: j.model || model };
 }
 
@@ -160,6 +158,29 @@ function apiError(status, txt) {
   if (status === 429) return 'Слишком часто — модель просит подождать.';
   if (status === 404) return 'Такой модели нет. Обнови список в настройках.';
   return `OpenRouter: ${detail || status}`;
+}
+
+/* Достаём из ответа именно текст.
+   Пустой пузырь в чате брался отсюда: модель, которая думает перед ответом,
+   иногда кладёт весь ответ в поле рассуждения, а в поле ответа оставляет
+   пусто или один невидимый символ. `trim()` невидимые не убирает — строка
+   считалась непустой, и на экран выезжал белый прямоугольник без текста.
+   Порядок: поле ответа → рассуждение → честная ошибка. */
+const INVISIBLE = /[\u200B-\u200D\uFEFF\u2060]/g;
+
+function flat(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.map(p => (typeof p === 'string' ? p : p?.text || '')).join('');
+  return '';
+}
+
+function clean(s) { return String(s || '').replace(INVISIBLE, '').trim(); }
+
+function pickText(msg) {
+  const answer = clean(flat(msg?.content));
+  if (answer) return answer;
+  const thought = clean(flat(msg?.reasoning ?? msg?.reasoning_content));
+  return thought;
 }
 
 export function parseJson(text) {
