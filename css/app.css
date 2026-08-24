@@ -517,6 +517,16 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
 .ssw{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;font-size:11.5px;font-weight:600;color:var(--ink3)}
 .ssw b{font-weight:800}
 
+/* ── живая точка и стрелки движения ──
+   Пульс — transform на SVG-круге: дешёво и не трогает layout. Уважает
+   reduce motion: кому мешает движение, тому точка просто стоит. */
+.pulse-dot{transform-box:fill-box;transform-origin:center;animation:pdot 2.6s ease-out infinite}
+@keyframes pdot{0%{transform:scale(1);opacity:.35}70%{transform:scale(2.4);opacity:0}100%{transform:scale(2.4);opacity:0}}
+@media (prefers-reduced-motion: reduce){.pulse-dot{animation:none;opacity:0}}
+.mvarr{width:26px;min-width:26px;text-align:center;font-size:13px;font-weight:800}
+.mvarr.better{color:var(--ok-dot)}
+.mvarr.worse{color:var(--bad-dot)}
+
 /* ── карта систем организма ──────────────────────────────────────
    Плоский список показателей не отвечает на главный вопрос — что вообще
    изучено. Точки под названием: закрашенная — базовый анализ этой системы

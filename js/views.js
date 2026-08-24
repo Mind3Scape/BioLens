@@ -462,6 +462,32 @@ export function markers(app) {
       <div class="card list">${attention.map(row).join('')}</div>`;
   }
 
+  /* Движение за год. Ornament показывает, где ты сейчас; мы показываем, куда
+     ты пришёл — и это честная динамика: сдвиги уже отфильтрованы от разброса
+     лабораторий (RCV) и от замеров, сданных подряд. Стрелка говорит не
+     «выросло/упало», а «лучше/дальше от нормы»: рост витамина D — победа,
+     рост холестерина — нет, и одинаковой стрелкой их показывать нельзя. */
+  const moved = S.shifts(6).map(m => ({ ...m,
+    tone: S.changeTone(m.key, m.base.value, m.last.value, m.last.refLow, m.last.refHigh) }))
+    .filter(m => m.tone !== 'flat');
+  if (moved.length) {
+    const better = moved.filter(m => m.tone === 'better');
+    const worse = moved.filter(m => m.tone === 'worse');
+    html += `<div class="cap">Движение за год</div><div class="card list">`;
+    for (const m of moved) {
+      const diff = +(m.last.value - m.base.value).toFixed(2);
+      const months = Math.max(1, Math.round(m.gapDays / 30));
+      html += `<div class="it" data-act="marker" data-key="${esc(m.key)}">
+        <span class="mvarr ${m.tone}">${m.tone === 'better' ? '▲' : '▼'}</span>
+        <div class="grow"><div class="nm">${esc(m.title)}</div>
+          <div class="sm">${m.tone === 'better' ? 'ближе к норме' : 'дальше от нормы'} · было ${S.trim(m.base.value)}, стало <b>${S.trim(m.last.value)}</b> за ${months} ${RU_MONTHS(months)}</div></div>
+        ${statusLine(m.series, { w: 58, h: 24 })}
+      </div>`;
+    }
+    html += `</div>`;
+    if (better.length && !worse.length) html += `<div class="sm" style="padding:0 4px 10px">Всё, что двигалось за год, двигалось к норме.</div>`;
+  }
+
   html += `<div class="grp">
     <div class="gi" data-act="go" data-r="markers-all">${icon('chartline', 'ico s')}<div class="t">Все показатели списком</div>
       <div class="v">${list.length}</div>${chevron()}</div>
@@ -515,6 +541,16 @@ export function gapsView(app) {
       `<button class="btn ghost" data-act="due">Что пора пересдать</button>`);
   }
 
+  /* Мотивация числом, а не лозунгом: изученность — это доля сданных базовых
+     анализов, значит один визит с этим списком поднимает её ровно на столько.
+     Честная арифметика вместо «стань лучшей версией себя». */
+  const wouldBe = Math.round(((cov.known + total) / cov.total) * 100);
+  html += `<div class="card">
+    <div class="row" style="gap:12px;align-items:center">
+      <span class="nico teal">${icon('target', 'ico s')}</span>
+      <div class="grow"><div class="nm" style="font-size:14.5px">Один визит — и изученность ${Math.round(cov.pct * 100)}% → <b style="color:var(--ok)">${wouldBe}%</b></div>
+        <div class="sm" style="margin-top:2px">все ${total} ${plural(total, 'анализ', 'анализа', 'анализов')} ниже сдаются по обычной крови и моче</div></div>
+    </div></div>`;
   html += `<div class="card flat"><div class="row" style="align-items:flex-start">${icon('eye', 'ico s')}
     <div class="grow sm" style="line-height:1.55">Это обычный базовый набор для каждой системы, а не назначение. Я вижу только то, что попало в бланки: если анализ сдавался на бумаге и в приложение не попал — для меня его нет.</div></div></div>`;
 
@@ -615,6 +651,8 @@ function row(m) {
     </div>
   </div>`;
 }
+
+const RU_MONTHS = (n) => plural(n, 'месяц', 'месяца', 'месяцев');
 
 function plural(n, a, b, c) {
   const x = Math.abs(n) % 100, y = x % 10;
@@ -1721,10 +1759,26 @@ export function due(app) {
   const list = S.dueList();
   let html = backHead('Что пересдать', `${list.length} ${plural(list.length, 'показатель ждёт', 'показателя ждут', 'показателей ждут')} очереди`);
   if (!list.length) return html + emptyBlock('check', 'Всё свежее', 'Ни один показатель не просрочен.');
-  /* Справа — сколько месяцев прошло с последнего замера. Раньше там стояло
-     «на сколько просрочен», и то же самое на главной считалось от даты
-     замера: два разных числа про одно и то же. */
-  html += `<div class="card list">${list.map(m => {
+
+  /* Это не список — это ПЛАН ОДНОГО ВИЗИТА. Справочник знает про каждый
+     показатель, как его сдавать; делим очередь на «натощак, с утра» и
+     «в любое время», и сверху говорим главное: всё это — одна поездка в
+     лабораторию, а не десять. Список, который надо было разгадывать
+     («а это натощак?»), превращается в план, который можно выполнить. */
+  const withPrep = list.map(m => {
+    const prep = info(m.key)?.prep || '';
+    const fasting = /натощак|без еды/i.test(prep);
+    return { ...m, prep, fasting };
+  });
+  const fast = withPrep.filter(m => m.fasting);
+  const any = withPrep.filter(m => !m.fasting);
+
+  html += `<div class="card flat"><div class="row" style="align-items:flex-start">${icon('lightning', 'ico s')}
+    <div class="grow sm" style="line-height:1.55">${fast.length
+      ? `Всё это — <b style="color:var(--ink)">один визит</b>: приходи утром натощак (8–12 часов без еды, вода можно) — и сдашь сразу всё, включая то, что голодания не требует.`
+      : `Всё это — <b style="color:var(--ink)">один визит в любое время дня</b>: голодания не требует ни один из списка.`}</div></div></div>`;
+
+  const dueRow = (m) => {
     const months = Math.max(1, Math.floor(m.daysOld / 30));
     return `<div class="it" data-act="marker" data-key="${esc(m.key)}">
       ${statusDot(m.stale ? 'unknown' : m.status)}
@@ -1735,7 +1789,22 @@ export function due(app) {
         <div class="unit" style="display:block;margin:1px 0 0">мес. назад</div>
       </div>
     </div>`;
-  }).join('')}</div>`;
+  };
+  if (fast.length) html += `<div class="cap">Натощак, с утра · ${fast.length}</div><div class="card list">${fast.map(dueRow).join('')}</div>`;
+  if (any.length) html += `<div class="cap">${fast.length ? 'Голодание не нужно' : 'В любое время'} · ${any.length}</div><div class="card list">${any.map(dueRow).join('')}</div>`;
+
+  /* Тонкости подготовки — только те, что реально влияют на числа, и только
+     для показателей из очереди. Общие банальности сюда не пускаем. */
+  const tips = withPrep.map(m => ({ ...m,
+    /* ведущая банальность («голодание не требуется») уже сказана заголовком
+       секции — в подсказке остаётся только то, что реально бережёт числа */
+    tip: m.prep.replace(/^(Голодание не требуется|Специальная подготовка не нужна)[^.]*\.\s*/,'').trim(),
+  })).filter(m => m.tip).slice(0, 4);
+  if (tips.length) {
+    html += `<div class="cap">Чтобы числа не соврали</div><div class="card">${tips.map((m, i) =>
+      `${i ? '<div class="divide"></div>' : ''}<div class="sm" style="line-height:1.5"><b style="color:var(--ink)">${esc(m.title)}.</b> ${esc(m.tip)}</div>`).join('')}</div>`;
+  }
+
   html += `<button class="btn ghost" data-act="copy-due">Скопировать список для лаборатории</button>`;
   html += `<div class="disc">Сроки — простое правило, а не назначение: раз в год, чаще для того, что вышло за границу.</div>`;
   return html;

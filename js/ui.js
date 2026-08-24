@@ -343,7 +343,11 @@ export function chart(series, { w = 340, h = 210, unit = '' } = {}) {
     const isLast = i === pts.length - 1;
     const cx = xs[i], cy = ys[i];
     const r = isLast ? 5.5 : 3.8;
-    let out = `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r + 2.2}" fill="var(--surface)"/>
+    /* Последний замер дышит: тихий пульс говорит «вот где ты сейчас» без
+       единого слова. Пульсирует ореол, сама точка неподвижна — данные не
+       двигаются, двигается внимание. */
+    let out = isLast ? `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r}" fill="${fill}" opacity="0.35" class="pulse-dot"/>` : '';
+    out += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r + 2.2}" fill="var(--surface)"/>
       <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r}" fill="${fill}"/>`;
     if (isLast) {
       const lx = Math.min(w - 20, Math.max(20, cx));
