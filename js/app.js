@@ -802,7 +802,7 @@ async function loadModels() {
   try {
     const list = await fetchModels();
     // семейства, которые обычно уверенно читают таблицы в бланках
-    const PREFERRED = ['google/gemini', 'openai/gpt', 'anthropic/claude', 'qwen/qwen', 'mistralai/pixtral', 'x-ai/grok'];
+    const PREFERRED = ['stealth/ox', 'google/gemini', 'openai/gpt', 'anthropic/claude', 'qwen/qwen', 'mistralai/pixtral', 'x-ai/grok'];
     const rank = (m) => {
       const i = PREFERRED.findIndex(p => m.id.startsWith(p));
       return i === -1 ? 99 : i;

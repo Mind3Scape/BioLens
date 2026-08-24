@@ -147,8 +147,8 @@ export async function shrinkImage(file, max = 1600, quality = 0.85) {
 const SKEY = 'biolens.settings';
 const defaults = {
   apiKey: '',
-  modelVision: 'google/gemini-2.5-flash',   // уверенно читает таблицы бланков, стоит доли цента за страницу
-  modelChat: 'google/gemini-2.5-flash',
+  modelVision: 'stealth/ox-alpha',   // бесплатная, видит картинки, окно на миллион токенов
+  modelChat: 'stealth/ox-alpha',
   profileName: 'Я',
   sex: 'm',
   sexSet: false,     // пол не выбран явно: подставлять мужские нормы молча нельзя
@@ -164,7 +164,11 @@ const defaults = {
   cloudBytes: 0,
   tgUserId: null,
   themeMigrated: 0,
+  modelMigrated: 0,
 };
+
+/* модели, которые стояли по умолчанию в прошлых сборках */
+const WAS_DEFAULT = ['', 'google/gemini-2.5-flash'];
 
 export function settings() {
   try {
@@ -173,6 +177,14 @@ export function settings() {
     let touched = false;
     if (saved.theme === 'auto' && !saved.themeMigrated) {
       saved.theme = 'light'; saved.themeMigrated = 1; touched = true;
+    }
+    /* Разовый переезд на бесплатную модель с окном в миллион токенов.
+       Переселяем только тех, у кого стояла модель по умолчанию: если человек
+       выбрал модель руками, его выбор чужой и трогать его нельзя. */
+    if (!saved.modelMigrated) {
+      if (WAS_DEFAULT.includes(saved.modelVision || '')) saved.modelVision = defaults.modelVision;
+      if (WAS_DEFAULT.includes(saved.modelChat || '')) saved.modelChat = defaults.modelChat;
+      saved.modelMigrated = 1; touched = true;
     }
     if (!saved.modelVision) { saved.modelVision = defaults.modelVision; touched = true; }
     if (!saved.modelChat) { saved.modelChat = defaults.modelChat; touched = true; }

@@ -1,7 +1,7 @@
 /* Слой общения с OpenRouter. Ключ — твой, лежит в этом браузере.
    Здесь же промпты: разбор бланка, разбор тарелки, вопрос по архиву. */
 
-import { settings } from './db.js';
+import { settings, cachedModels } from './db.js';
 
 const BASE = 'https://openrouter.ai/api/v1';
 
@@ -28,6 +28,8 @@ export async function fetchModels() {
     imagePrice: price(m.pricing?.image),
     variablePrice: Number(m.pricing?.prompt) < 0,
     free: price(m.pricing?.prompt) === 0 && price(m.pricing?.completion) === 0,
+    reasoning: m.reasoning || null,          // обязана ли модель думать перед ответом
+    maxOut: m.top_provider?.max_completion_tokens || 0,
   }));
 }
 
@@ -58,10 +60,26 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 /* Ни один запрос не имеет права висеть вечно: зависшая страница останавливала
    всю очередь разбора без единого сообщения на экране. */
 const TIMEOUT = 120000;
+const TIMEOUT_THINKING = 240000;   // думающая модель молчит дольше — но не вечно
 
-async function post(body, key, signal) {
+/* ── модели, которые обязаны рассуждать ──────────────────────
+   Такая модель сначала думает «про себя», и токены размышления идут из того же
+   лимита, что и ответ. По умолчанию она думает на полную: бланк на шестьдесят
+   строк успевал упереться в лимит ещё до первой строки таблицы, а человек
+   смотрел на «ответ оборвался». Поэтому просим думать коротко, размышление в
+   ответ не тянем и даём запас токенов сверх самого ответа. */
+const THINKS_ANYWAY = ['stealth/ox-alpha'];
+const THINK_ROOM = 8000;
+
+function thinksBeforeAnswer(id) {
+  if (THINKS_ANYWAY.includes(id)) return true;
+  const m = (cachedModels() || []).find(x => x.id === id);
+  return !!(m?.reasoning?.mandatory || m?.reasoning?.default_enabled);
+}
+
+async function post(body, key, signal, timeout = TIMEOUT) {
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), TIMEOUT);
+  const timer = setTimeout(() => ac.abort(), timeout);
   const onAbort = () => ac.abort();
   signal?.addEventListener('abort', onAbort);
   try {
@@ -70,7 +88,7 @@ async function post(body, key, signal) {
     });
   } catch (e) {
     if (e?.name === 'AbortError' && !signal?.aborted) {
-      throw new Error('Модель не ответила за две минуты — попробуй ещё раз или выбери другую');
+      throw new Error(`Модель не ответила за ${Math.round(timeout / 60000)} мин — попробуй ещё раз или выбери другую`);
     }
     throw new Error('Нет связи с OpenRouter — проверь интернет');
   } finally {
@@ -85,16 +103,19 @@ export async function chat({ messages, model, schema = null, temperature = 0.2, 
   if (!key) throw new Error('Сначала вставь ключ OpenRouter в настройках');
   if (!model) throw new Error('Не выбрана модель');
 
-  const body = { model, messages, temperature, max_tokens: maxTokens };
+  const thinks = thinksBeforeAnswer(model);
+  const body = { model, messages, temperature, max_tokens: thinks ? maxTokens + THINK_ROOM : maxTokens };
+  if (thinks) body.reasoning = { effort: 'low', exclude: true };
   if (schema) body.response_format = { type: 'json_schema', json_schema: { name: 'result', strict: true, schema } };
+  const timeout = thinks ? TIMEOUT_THINKING : TIMEOUT;
 
-  let r = await post(body, key, signal);
+  let r = await post(body, key, signal, timeout);
 
   // бесплатные модели часто просят подождать — подождём и попробуем ещё, это дешевле, чем терять страницу
   for (let attempt = 1; attempt < tries && (r.status === 429 || r.status >= 500); attempt++) {
     const wait = r.status === 429 ? attempt * 4000 : attempt * 1500;
     await sleep(wait);
-    r = await post(body, key, signal);
+    r = await post(body, key, signal, timeout);
   }
 
   if (!r.ok && schema) {
@@ -102,7 +123,7 @@ export async function chat({ messages, model, schema = null, temperature = 0.2, 
     if (/response_format|json_schema|structured/i.test(txt)) {
       delete body.response_format;
       body.messages = withJsonNudge(messages);
-      r = await post(body, key, signal);
+      r = await post(body, key, signal, timeout);
     } else {
       throw new Error(apiError(r.status, txt));
     }
