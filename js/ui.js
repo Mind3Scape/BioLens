@@ -112,6 +112,19 @@ export function sparkline(series, { w = 76, h = 26, color } = {}) {
   </svg>`;
 }
 
+/* Отрезку между двумя замерами цвет даёт градиент от статуса начала к
+   статусу конца: линия перетекает из зелёного в красный там, где показатель
+   выходил за границу, — без ступеньки, которую глаз читает как склейку двух
+   графиков. Если статус не менялся, обычный штрих без градиента: сотня
+   лишних <linearGradient> замедляет рендер списка. */
+let GRAD_SEQ = 0;
+function tonedSegment(d, x1, y1, x2, y2, c1, c2, sw, defs) {
+  if (c1 === c2) return `<path d="${d}" fill="none" stroke="${c1}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  const id = 'sg' + (++GRAD_SEQ);
+  defs.push(`<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"><stop offset="0.25" stop-color="${c1}"/><stop offset="0.75" stop-color="${c2}"/></linearGradient>`);
+  return `<path d="${d}" fill="none" stroke="url(#${id})" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`;
+}
+
 /* ── линия, окрашенная состоянием ────────────────────────────────
    Взято у Ornament и переложено на наш язык цвета. Отрезок горит тем цветом,
    каким был замер на ЕГО КОНЦЕ: жёлтым там, где значение подошло к границе,
@@ -164,12 +177,14 @@ export function statusLine(series, { w = 108, h = 42, fluid = false } = {}) {
   }
 
   const m = tangents(xs, ys);
+  const defs = [];
   const line = pts.slice(1).map((_, i) =>
-    `<path d="${segment(xs, ys, m, i)}" fill="none" stroke="${toneDot(pts[i + 1].status)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`
+    tonedSegment(segment(xs, ys, m, i), xs[i], ys[i], xs[i + 1], ys[i + 1],
+      toneDot(pts[i].status), toneDot(pts[i + 1].status), 2, defs)
   ).join('');
 
   const lx = xs[xs.length - 1].toFixed(1), ly = ys[ys.length - 1].toFixed(1);
-  return `<svg width="${fluid ? '100%' : w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">${band}${line}
+  return `<svg width="${fluid ? '100%' : w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">${defs.length ? `<defs>${defs.join('')}</defs>` : ''}${band}${line}
     <circle cx="${lx}" cy="${ly}" r="3.1" fill="${toneDot(pts[pts.length - 1].status)}" stroke="var(--surface)" stroke-width="1.6"/></svg>`;
 }
 
@@ -288,15 +303,24 @@ export function chart(series, { w = 340, h = 210, unit = '' } = {}) {
   const GAP_DAYS = 730;
   const xs = times.map(X), ys = vals.map(Y);
   const m = pts.length > 1 ? tangents(xs, ys) : [];
+  const defs = [];
   let path = '', biggest = null;
   for (let i = 1; i < pts.length; i++) {
     const gapDays = (times[i] - times[i - 1]) / 86400000;
     const d = segment(xs, ys, m, i - 1);
     if (gapDays > GAP_DAYS) {
+      /* Разрыв в наблюдении остаётся серым пунктиром: красить его статусом
+         значило бы утверждать, что мы знаем, каким человек был эти годы. */
       path += `<path d="${d}" fill="none" stroke="var(--ink4)" stroke-width="2" stroke-dasharray="5 5" stroke-linecap="round"/>`;
       if (!biggest || gapDays > biggest.days) biggest = { days: gapDays, x: (xs[i - 1] + xs[i]) / 2, y: (ys[i - 1] + ys[i]) / 2 };
     } else {
-      path += `<path d="${d}" fill="none" stroke="var(--ink)" stroke-width="2.4" stroke-linecap="round"/>`;
+      /* Линия окрашена СОСТОЯНИЕМ (взято у Ornament): между замерами цвет
+         перетекает из статуса в статус. «В норме» здесь остаётся чернильным,
+         а не зелёным — иначе весь график заливает зелёным и вышедшая точка
+         перестаёт бросаться в глаза. Горит только неблагополучие. */
+      const c0 = pts[i - 1].status === 'ok' ? 'var(--ink)' : toneDot(pts[i - 1].status);
+      const c1 = pts[i].status === 'ok' ? 'var(--ink)' : toneDot(pts[i].status);
+      path += tonedSegment(d, xs[i - 1], ys[i - 1], xs[i], ys[i], c0, c1, 2.4, defs);
     }
   }
   const gapMark = biggest ? (() => {
@@ -341,7 +365,7 @@ export function chart(series, { w = 340, h = 210, unit = '' } = {}) {
   }).join('');
 
   return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block" font-family="-apple-system,sans-serif">
-    ${band}${edges}${bandLabel}${path}${gapMark}${refTags}${dots}${labels}
+    ${defs.length ? `<defs>${defs.join('')}</defs>` : ''}${band}${edges}${bandLabel}${path}${gapMark}${refTags}${dots}${labels}
   </svg>`;
 }
 

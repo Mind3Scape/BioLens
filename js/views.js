@@ -398,10 +398,30 @@ const dayTitle = (iso) => {
    важное, чего список не говорил никогда, — ЧЕГО НЕТ. Пустая система это не
    «здоров», это «не смотрели ни разу». */
 
+/* Сводка состояний (из макета): одна полоса, поделённая цветами по долям, и
+   те же числа словами. Отвечает на «сколько у меня плохо» одним взглядом —
+   раньше это число надо было собирать по списку. Серые здесь — «замер старше
+   двух лет»: неизвестность показываем честно, а не прячем в конец. */
+function statusSummary(list) {
+  const n = { out: 0, edge: 0, ok: 0, stale: 0 };
+  for (const m of list) (m.stale ? n.stale++ : n[m.status] === undefined ? 0 : n[m.status]++);
+  const total = n.out + n.edge + n.ok + n.stale;
+  if (!total) return '';
+  const segs = [
+    ['var(--ok-dot)', n.ok, 'в норме'],
+    ['var(--edge-dot)', n.edge, 'у границы'],
+    ['var(--bad-dot)', n.out, 'вне нормы'],
+    ['var(--hair2)', n.stale, 'устарели'],
+  ].filter(([, k]) => k > 0);
+  const bar = segs.map(([c, k]) => `<i style="flex:${k};background:${c}"></i>`).join('');
+  const words = segs.map(([c, k, w]) => `<span><b style="color:${c === 'var(--hair2)' ? 'var(--ink3)' : c}">${k}</b> ${w}</span>`).join('');
+  return `<div class="ssum"><div class="ssb">${bar}</div><div class="ssw">${words}</div></div>`;
+}
+
 export function markers(app) {
   const list = S.markerList();
   if (!list.length) {
-    return head('Тело', '') + emptyBlock('heartbeat', 'Тело пока не изучено',
+    return head('Здоровье', '') + emptyBlock('heartbeat', 'Тело пока не изучено',
       'Как только разберу первый анализ, здесь загорятся системы: кровь, печень, почки, гормоны. И будет видно, про какие из них я ещё ничего не знаю.',
       `<button class="btn" data-act="add">Закинуть анализ</button>`);
   }
@@ -410,7 +430,7 @@ export function markers(app) {
   const cov = coverage(list);
   const attention = list.filter(m => !m.stale && (m.status === 'out' || m.status === 'edge'));
 
-  let html = head('Тело', `${list.length} ${plural(list.length, 'показатель', 'показателя', 'показателей')} · ${cov.systemsTouched} ${plural(cov.systemsTouched, 'система', 'системы', 'систем')} из ${cov.systemsTotal}`, avatarBtn + addBtn);
+  let html = head('Здоровье', `${list.length} ${plural(list.length, 'показатель', 'показателя', 'показателей')} · ${cov.systemsTouched} ${plural(cov.systemsTouched, 'система', 'системы', 'систем')} из ${cov.systemsTotal}`, avatarBtn + addBtn);
 
   /* Герой экрана отвечает на вопрос, ради которого сюда заходят: что я знаю
      о себе и чего не знаю. Дуга — как шкала прибора: видно, что стрелка едва
@@ -425,6 +445,7 @@ export function markers(app) {
         <div class="sm" style="margin-top:3px">Сдано <b style="color:var(--ink)">${cov.known}</b> из ${cov.total} базовых анализов${cov.blank.length ? `, ${cov.blank.length} ${plural(cov.blank.length, 'система', 'системы', 'систем')} не тронуто вовсе` : ''}</div>
       </div>
     </div>
+    ${statusSummary(list)}
     ${gapsCount ? `<div class="divide"></div>
       <div class="row tap" data-act="go" data-r="gaps">
         <span class="nico teal">${icon('target', 'ico s')}</span>
@@ -587,7 +608,7 @@ function row(m) {
   return `<div class="it" data-act="marker" data-key="${esc(m.key)}">
     ${statusDot(st)}
     <div class="grow"><div class="nm">${esc(m.title)}</div><div class="sm">${esc(sub)}</div></div>
-    ${m.stale ? '' : sparkline(m.series, { w: 58, h: 24 })}
+    ${m.stale ? '' : statusLine(m.series, { w: 58, h: 24 })}
     <div style="text-align:right;min-width:52px">
       <div class="val ${m.last.confidence < 0.75 ? 'doubt' : ''}" style="color:${inkTone(st)}">${S.trim(m.last.value)}</div>
       <div class="unit" style="display:block;margin:1px 0 0">${esc(m.unit)}</div>
@@ -1654,7 +1675,7 @@ export function mealView(app) {
 
 export function ask(app) {
   const msgs = app.chat || [];
-  let html = head('Спросить', `вижу ${S.state.docs.filter(d => d.status === 'ready').length} документов и ${S.markerKeys().length} показателей`, avatarBtn);
+  let html = head('Чат', `вижу ${S.state.docs.filter(d => d.status === 'ready').length} документов и ${S.markerKeys().length} показателей`, avatarBtn);
 
   if (!db.settings().apiKey) {
     return html + emptyBlock('lock', 'Нужен ключ OpenRouter',
@@ -1672,12 +1693,18 @@ export function ask(app) {
 
   /* Пустой текст в пузырь не пускаем: белый прямоугольник без единой буквы
      человек читает как поломку приложения, а не как молчание модели. */
+  /* У пузыря ИИ — знак-искра на плече (из макета): в длинном диалоге глаз
+     различает стороны по форме, а не вчитываясь. Свои реплики — чернильные
+     справа, им значок не нужен: «я» и так знаю, где я. */
   html += msgs.map(m => {
     const text = String(m.text || '').trim();
-    return `<div class="bubble ${m.role === 'user' ? 'me' : 'ai'}">${
-      text ? esc(text) : `<span style="color:var(--ink3)">модель ничего не прислала — спроси ещё раз</span>`}</div>`;
+    const body = text ? esc(text) : `<span style="color:var(--ink3)">модель ничего не прислала — спроси ещё раз</span>`;
+    return m.role === 'user'
+      ? `<div class="bubble me">${body}</div>`
+      : `<div class="airow"><span class="aimk">${icon('sparkle', 'ico s')}</span><div class="bubble im">${body}</div></div>`;
   }).join('');
-  if (app.asking) html += `<div class="bubble ai"><div class="row"><div class="spin"></div><span class="sm">думаю…</span></div></div>`;
+  if (app.asking) { /* индикатор ниже переопределён той же формой */ }
+  if (app.asking) html += `<div class="airow"><span class="aimk">${icon('sparkle', 'ico s')}</span><div class="bubble im"><div class="row"><div class="spin"></div><span class="sm">думаю…</span></div></div></div>`;
   // одной фразой: что это такое и чего от него не ждать
   html += `<div class="disc">Помогаю разобраться в твоих анализах: читаю числа из архива и прикидываю, что они могут значить. Диагнозов не ставлю и могу ошибаться.</div>`;
 

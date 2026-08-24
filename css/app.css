@@ -42,8 +42,8 @@
   /* Плавающий слой — единственное место, где живёт стекло.
      В свежей версии системы у него появились тёмная кромка и более яркий
      верхний блик: без них стекло на светлом фоне «растворяется». */
-  --glass:rgba(255,255,255,0.60);
-  --glass-edge:rgba(21,22,27,0.10);
+  --glass:rgba(255,255,255,0.52);
+  --glass-edge:rgba(21,22,27,0.16);
   --glass-spec:rgba(255,255,255,0.95);
   --glass-shadow:0 10px 30px rgba(21,22,27,0.13);
 }
@@ -239,7 +239,7 @@ label.lab{display:block;font-size:12px;font-weight:700;color:var(--ink3);margin:
 .tabs{position:absolute;left:0;right:0;bottom:0;padding:0 14px calc(9px + var(--safe-b));pointer-events:none;
   display:flex;justify-content:center}
 .dock{pointer-events:auto;width:auto;max-width:100%;
-  background:var(--glass);backdrop-filter:blur(26px) saturate(180%);-webkit-backdrop-filter:blur(26px) saturate(180%);
+  background:var(--glass);backdrop-filter:blur(34px) saturate(180%);-webkit-backdrop-filter:blur(34px) saturate(180%);
   border-radius:26px;
   box-shadow:var(--glass-shadow), inset 0 0.5px 0 var(--glass-spec), inset 0 0 0 0.5px var(--glass-edge);
   display:flex;align-items:center;justify-content:center;gap:2px;padding:6px;
@@ -326,8 +326,19 @@ html[data-theme="dark"] .tile .ph{background:#F2F2F0}
 /* ── чат ── */
 .bubble{max-width:88%;font-size:14.5px;line-height:1.5;padding:12px 14px;border-radius:20px;margin-bottom:10px;white-space:pre-wrap}
 .bubble.me{margin-left:auto;background:var(--ink);color:var(--surface);border-bottom-right-radius:7px}
-.bubble.ai{background:var(--surface);border-bottom-left-radius:7px;box-shadow:var(--shadow)}
+/* Пузырь ИИ зовётся «im», не «ai»: класс .ai занят тёмной карточкой
+   «что я заметил» с белым текстом, и пузырь chat'а его наследовал — текст
+   ответа становился белым на белом. Человек видел «белые экраны» и был
+   уверен, что модель молчит, хотя она отвечала. Имена разведены навсегда. */
+.bubble.im{background:var(--surface);color:var(--ink);border-bottom-left-radius:7px;box-shadow:var(--shadow)}
 .composer{position:sticky;bottom:0;display:flex;gap:8px;align-items:flex-end;padding-top:8px;background:linear-gradient(transparent,var(--canvas) 30%)}
+/* знак ИИ на плече пузыря */
+.airow{display:flex;gap:7px;align-items:flex-end;margin-bottom:10px}
+.airow .bubble{margin-bottom:0}
+.aimk{width:24px;height:24px;min-width:24px;border-radius:99px;background:var(--ink);color:var(--surface);
+  display:flex;align-items:center;justify-content:center;margin-bottom:2px}
+.aimk .ico{width:12px;height:12px}
+html[data-theme="dark"] .aimk{background:rgba(255,255,255,0.14);color:var(--ink)}
 
 /* ── оговорки одним списком ──
    Раньше каждая оговорка была отдельной карточкой с иконкой: шесть серых
@@ -496,6 +507,15 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
 .mc-ft{display:flex;align-items:baseline;justify-content:space-between;gap:6px;
   font-size:10px;font-weight:750;letter-spacing:-0.1px}
 .mc-ref{color:var(--ink4);font-weight:600;white-space:nowrap}
+
+/* ── сводка состояний (из макета) ──
+   Полоса долей + числа словами. Полоса сегментами, не градиентом:
+   градиент говорил бы «плавный переход из нормы в беду», а тут просто счёт. */
+.ssum{margin-top:13px}
+.ssb{display:flex;gap:3px;height:6px;border-radius:99px;overflow:hidden}
+.ssb i{border-radius:99px;min-width:6px}
+.ssw{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;font-size:11.5px;font-weight:600;color:var(--ink3)}
+.ssw b{font-weight:800}
 
 /* ── карта систем организма ──────────────────────────────────────
    Плоский список показателей не отвечает на главный вопрос — что вообще
