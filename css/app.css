@@ -417,51 +417,57 @@ html[data-theme="dark"] .aimk{background:rgba(255,255,255,0.14);color:var(--ink)
    счётчиком. Цвет здесь строгий: светофор (зелёный, оранжевый, красный)
    означает состояние здоровья и ничего больше; синий, фиолетовый и
    бирюзовый — дела, а не диагнозы. */
-.tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
-.tile2{position:relative;background:var(--surface);border-radius:var(--r);padding:12px 12px 13px;box-shadow:var(--shadow);
-  border:none;font-family:inherit;text-align:left;cursor:pointer;color:var(--ink);overflow:hidden;min-height:108px;
-  display:flex;flex-direction:column;animation:tin .34s cubic-bezier(.22,1,.36,1) both}
+/* ── плитки главной ──
+   Анатомия и размеры взяты из макета по узлам, а не на глаз: квадрат,
+   радиус 18, поле 12, число 28/600, подпись 12 обычным начертанием, хвост
+   «из скольких» — серый. Одна анатомия на все плитки: раньше у каждой было
+   по три строки текста своим кеглем, и шесть разных рассказов на экране
+   глаз читал как таблицу, а не как сводку дня. */
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.tile2{position:relative;background:var(--surface);border-radius:18px;padding:12px;box-shadow:none;
+  border:none;font-family:inherit;text-align:left;cursor:pointer;color:var(--tink,var(--ink));overflow:hidden;
+  aspect-ratio:1/1;display:flex;flex-direction:column;animation:tin .34s cubic-bezier(.22,1,.36,1) both}
 @keyframes tin{from{opacity:0;transform:translateY(9px) scale(.985)}to{opacity:1;transform:none}}
 .tile2:active{transform:scale(0.98)}
-/* Знак плитки. Шесть одинаковых прямоугольников с цифрами глаз не различает —
-   за них цепляется значок в кружке своего цвета, а не заголовок мелкими
-   буквами. Кружок тот же, что у систем организма: один приём на всё. */
-.tile2 .tk{font-size:9.5px;font-weight:800;letter-spacing:0.7px;text-transform:uppercase;color:var(--accent,var(--ink4));
-  display:flex;align-items:center;gap:6px;min-height:22px;padding-right:24px}
-/* Линия состояния — внизу плитки, во всю ширину: в углу она отнимала место
-   у подписи, и «СТАЛО ЛУЧШЕ» обрезалось до «СТАЛО …». */
-.tline{margin-top:auto;padding-top:9px;margin-left:-1px;margin-right:-1px}
-.tile2 .tk span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tic{width:22px;height:22px;min-width:22px;border-radius:99px;display:flex;align-items:center;justify-content:center;
-  color:var(--accent,var(--ink3));background:color-mix(in srgb, var(--accent, var(--ink3)) 14%, transparent)}
-.tic .ico{width:13px;height:13px}
+.tile2 .tk{display:flex;align-items:center;justify-content:space-between;gap:6px}
+/* Кружок значка — БЕЛЫЙ, как в макете: на пастельной заливке он читается
+   как физическая кнопка, а тонированный сливался с фоном плитки. */
+.tic{width:30px;height:30px;min-width:30px;border-radius:99px;display:flex;align-items:center;justify-content:center;
+  background:var(--surface);color:var(--taccent,var(--ink3))}
+.tic .ico{width:15px;height:15px}
 .tic.sm-ic{width:20px;height:20px;min-width:20px}
 .tic.sm-ic .ico{width:11px;height:11px}
-.tile2.wide .tic{background:rgba(255,255,255,0.14);color:#fff}
-.tile2 .tk .ico{width:12px;height:12px}
-.tile2 .tv{font-size:27px;font-weight:800;letter-spacing:-1.1px;line-height:1;margin-top:8px;color:var(--accent,var(--ink))}
-/* Словесное значение вместо числа — своим кеглем: «снизить ЛПНП» в 27 пунктов
-   не помещается и рвётся пополам. */
-.tile2 .tv.short{font-size:16.5px;letter-spacing:-0.4px;line-height:1.2;margin-top:9px}
-.tile2 .ts{font-size:11.5px;font-weight:700;margin-left:3px;letter-spacing:-0.2px;color:var(--ink3)}
-.tile2 .tt{font-size:12.5px;font-weight:650;letter-spacing:-0.2px;margin-top:7px;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.tile2 .td{font-size:10.5px;color:var(--ink3);line-height:1.35;margin-top:3px;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.tile2 .tsp{position:absolute;right:10px;top:11px;color:var(--accent,var(--ink3));display:flex;opacity:.9}
-.t-out{--accent:var(--bad);background:var(--bad-soft)}
-.t-edge{--accent:var(--edge);background:var(--edge-soft)}
-.t-ok{--accent:var(--ok);background:var(--ok-soft)}
-.t-take{--accent:var(--blue);background:var(--blue-soft)}
-.t-study{--accent:var(--violet);background:var(--violet-soft)}
-.t-food{--accent:var(--teal);background:var(--teal-soft)}
-.t-slate{--accent:var(--ink3)}
-/* Слово ИИ — во всю ширину и чернилами: это голос, а не показатель */
-.tile2.wide{grid-column:1/-1;min-height:0;background:#15161B;color:#fff;cursor:default;--accent:rgba(255,255,255,0.55)}
-/* В тёмной теме чернильная плитка почти совпадает с карточками — голосу
-   нужна своя граница, иначе он теряется среди чисел. */
+.tile2 .tpct{font-size:12px;font-weight:650;letter-spacing:-0.2px;color:var(--tink,var(--ink2));opacity:.75}
+.tile2 .tbody{margin-top:auto}
+.tile2 .tlab{font-size:12px;line-height:1.1;font-weight:600;letter-spacing:-0.1px;color:var(--tink,var(--ink))}
+.tile2 .tv{font-size:28px;font-weight:700;letter-spacing:-1.1px;line-height:1.12;margin-top:7px;
+  color:var(--tink,var(--ink));display:flex;align-items:baseline;gap:5px;flex-wrap:wrap}
+.tile2 .ts{font-size:12px;font-weight:500;letter-spacing:-0.1px;color:var(--tsub,var(--ink3))}
+
+/* Пастель из макета. Тёмная тема — свои подложки: осветлённая пастель на
+   чёрном фоне светится и перебивает содержимое. */
+.t-food{--taccent:#2E7D5B;background:#D0E4CB;--tink:#1E2A22;--tsub:#5C6B60}
+.t-take{--taccent:#3A5A80;background:#D8E0E8;--tink:#1B242E;--tsub:#5C6A78}
+.t-out{--taccent:#A8433F;background:#E4CBCB;--tink:#2E1D1D;--tsub:#7A5C5C}
+.t-due{--taccent:#8A7220;background:#EFE8C0;--tink:#2B2712;--tsub:#6E6647}
+.t-ok{--taccent:#2E7D5B;background:#D0E4CB;--tink:#1E2A22;--tsub:#5C6B60}
+html[data-theme="dark"] .t-food{background:#1B2A22;--tink:#DDEAE0;--tsub:#8FA396;--taccent:#63C08F}
+html[data-theme="dark"] .t-take{background:#1A222C;--tink:#DCE5EE;--tsub:#8B9AAA;--taccent:#79A9FF}
+html[data-theme="dark"] .t-out{background:#2C1C1C;--tink:#F0DCDC;--tsub:#B08E8E;--taccent:#FF7062}
+html[data-theme="dark"] .t-due{background:#2A2618;--tink:#EDE6CC;--tsub:#A79C78;--taccent:#E0BC5A}
+html[data-theme="dark"] .t-ok{background:#1B2A22;--tink:#DDEAE0;--tsub:#8FA396;--taccent:#63C08F}
+html[data-theme="dark"] .tic{background:rgba(255,255,255,0.10)}
+
+/* Широкая плитка голоса ИИ — единственная, что ломает квадратный строй:
+   это не счётчик, а фраза, и мерить её «сколько из скольких» нечем. */
+.tile2.wide{grid-column:1/-1;aspect-ratio:auto;min-height:0;background:#15161B;color:#fff;cursor:default;
+  --tink:#fff;--tsub:rgba(255,255,255,0.6);--taccent:rgba(255,255,255,0.55);padding:13px 14px 14px}
 html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.09)}
-.tile2.wide .ap{font-size:13.5px;line-height:1.5;letter-spacing:-0.2px;margin-top:8px;color:rgba(255,255,255,0.92)}
+.tile2.wide .tk{font-size:9.5px;font-weight:800;letter-spacing:0.7px;text-transform:uppercase;
+  color:rgba(255,255,255,0.55);justify-content:flex-start;gap:7px}
+.tile2.wide .tic{width:22px;height:22px;min-width:22px;background:rgba(255,255,255,0.14);color:#fff}
+.tile2.wide .tic .ico{width:12px;height:12px}
+.tile2.wide .ap{font-size:13.5px;line-height:1.5;letter-spacing:-0.2px;margin-top:9px;color:rgba(255,255,255,0.92)}
 .tile2.wide .ap b{color:#fff;font-weight:750}
 .tile2.wide.quiet{opacity:.72}
 .tile2.wide:active{transform:none}
@@ -470,13 +476,22 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
    Кольцо в 24 пикселя честно показывало долю, но прочесть по нему «сколько
    осталось» было нельзя. Точки считаются глазом, а процент рядом называет
    ту же долю числом — для тех, кому важно точное. */
-.tpct{position:absolute;right:11px;top:12px;font-size:11.5px;font-weight:800;letter-spacing:-0.3px;
-  color:var(--accent,var(--ink3));opacity:.8}
-.dbar{position:relative;display:flex;align-items:center;gap:2px;height:7px;margin-top:auto;padding-top:11px;
-  box-sizing:content-box;color:var(--accent,var(--ink3))}
-.dbar i{flex:1 1 0;height:3px;border-radius:99px;background:currentColor;opacity:.2}
-.dbar i.on{opacity:.55}
+.dbar{position:relative;display:flex;align-items:center;gap:2px;height:7px;margin-top:12px;
+  box-sizing:content-box;color:var(--taccent,var(--ink3))}
+.dbar i{flex:1 1 0;height:3px;border-radius:99px;background:currentColor;opacity:.25}
+.dbar i.on{opacity:.9}
 .dbar b{position:absolute;bottom:0;width:2.5px;height:7px;border-radius:2px;background:currentColor}
+
+/* ── объяснение человеческим языком ──
+   Абзацы, а не строки списка: это связная речь про конкретного человека, и
+   читается она сверху вниз. Кегль крупнее обычной подписи — сюда приходят
+   именно читать, а не скользить глазом. */
+.hread .hr-hd{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:800;letter-spacing:0.8px;
+  text-transform:uppercase;color:var(--ink4);margin-bottom:11px}
+.hread .hr-hd .ico{width:13px;height:13px}
+.hread p{font-size:14.5px;line-height:1.55;letter-spacing:-0.2px;color:var(--ink2)}
+.hread p+p{margin-top:10px}
+.hread p b{color:var(--ink);font-weight:750}
 
 /* ── лента показателей ──
    Горизонтальная лента, а не ещё одна сетка: показателей десятки, вертикальным

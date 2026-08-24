@@ -14,14 +14,9 @@
 
 import * as S from './store.js';
 import * as MED from './meds.js';
-import { coverage } from './systems.js';
 import * as PP from './passport.js';
 import { markerTitle } from './markers.js';
 
-/* Настоящее русское склонение: «21 месяц», «22 месяца», «25 месяцев».
-   Прежнее `n < 5` давало «за 21 месяцев» на самой заметной плитке главной. */
-const RU_MONTH = (n) => { const x = Math.abs(n) % 100, y = x % 10;
-  return (x > 10 && x < 20) ? 'месяцев' : y === 1 ? 'месяц' : (y > 1 && y < 5) ? 'месяца' : 'месяцев'; };
 
 /* ── плитки дашборда ─────────────────────────────────────────── */
 
@@ -30,126 +25,76 @@ export function tiles(app) {
   const list = S.markerList();
   const out = [];
 
-  /* 1. Приём лекарств. Первое, что меняется в течение дня, — значит первое,
-        что человек ищет глазами. */
-  const d = MED.dayCount(today);
-  if (d.total) {
-    const slot = MED.nowSlot(today);
-    out.push({
-      id: 'meds', icon: 'pill',
-      kind: 'приём',
-      value: `${d.taken}`, suffix: `/${d.total}`,
-      title: d.left ? `Осталось ${d.left}` : 'Всё принято',
-      sub: d.left && slot ? `ближайшее — ${slot.title.toLowerCase()}, ${slot.at}` : 'сегодня можно выдохнуть',
-      tone: d.left ? 'take' : 'ok',
-      act: 'go', data: { r: 'meds' },
-      ring: d.total ? d.taken / d.total : 0,
-    });
-  }
+  /* Анатомия плитки — из макета, одна на все четыре: белый кружок со знаком,
+     процент в углу, подпись обычным начертанием, крупное число со СЕРЫМ
+     хвостом «из скольких», точечная полоса внизу. Раньше у каждой плитки было
+     по три строки текста своим кеглем — шесть разных рассказов на одном
+     экране. Теперь это счётчики одного рода: «сколько из скольких».
 
-  /* 2. Еда — ВСЕГДА, даже когда сегодня пусто. Это счётчик дня наравне с
-        приёмом лекарств: если он появляется через раз, его перестают искать.
-        Ноль здесь честный, а не пустая карточка с прочерком. */
+     Конкретика («какой именно показатель вне нормы») ушла ниже — в ленту
+     показателей: там у неё есть число, коридор и линия пути, а на плитке
+     помещалась только половина правды. */
+
+  /* 1. Еда — всегда, даже когда сегодня пусто: счётчик дня, который
+        появляется через раз, перестают искать глазами. */
   const t = S.dayTotals(today);
   const tg = S.dayTargets();
-  const goal = S.foodGoal();
   out.push({
-    id: 'food', icon: 'forkknife',
-    kind: 'съедено',
-    value: `${Math.round(t.kcal)}`, suffix: 'ккал',
-    title: t.count
-      ? `${t.count} ${t.count === 1 ? 'приём' : t.count < 5 ? 'приёма' : 'приёмов'} пищи`
-      : 'Ещё ничего не снято',
-    sub: t.count
-      ? `Б ${Math.round(t.protein_g)} · Ж ${Math.round(t.fat_g)} · У ${Math.round(t.carbs_g)}`
-      : goal ? `цель из анализов: ${goal.goal}` : `ориентир дня — ${tg.kcal} ккал`,
-    tone: 'food',
+    id: 'food', icon: 'forkknife', tone: 'food',
+    label: 'Съедено',
+    value: `${Math.round(t.kcal)}`,
+    tail: `/ ${tg.kcal} ккал`,
+    pct: tg.kcal ? Math.min(1, t.kcal / tg.kcal) : 0,
     act: 'go', data: { r: 'food' },
-    ring: tg.kcal ? Math.min(1, t.kcal / tg.kcal) : 0,
   });
 
-  /* 3. Что вне нормы прямо сейчас — с линией, а не одним числом:
-        «12 два года подряд» и «12 впервые» — разные новости. */
-  const bad = list.filter(m => !m.stale && m.status === 'out')[0]
-    || list.filter(m => !m.stale && m.status === 'edge')[0];
-  if (bad) {
+  /* 2. Приём лекарств — первое, что меняется в течение дня. */
+  const d = MED.dayCount(today);
+  if (d.total) {
     out.push({
-      id: 'out', icon: 'warning',
-      kind: bad.status === 'out' ? 'вне нормы' : 'у границы',
-      value: S.trim(bad.last.value), suffix: bad.unit,
-      title: bad.title,
-      sub: `норма ${S.fmtRef(bad.last)} · ${S.ruShort(bad.last.date)}`,
-      tone: bad.status === 'out' ? 'out' : 'edge',
-      act: 'marker', data: { key: bad.key },
-      spark: bad.series,
+      id: 'meds', icon: 'pill', tone: 'take',
+      label: 'Приём лекарств',
+      value: `${d.taken}`,
+      tail: `/ ${d.total} ${plural(d.total, 'приём', 'приёма', 'приёмов')}`,
+      pct: d.taken / d.total,
+      act: 'go', data: { r: 'meds' },
     });
   }
 
-  /* 4. Настоящий сдвиг за год — уже отфильтрованный от разброса лабораторий. */
-  const sh = S.shifts(3).filter(m => m.deltaTone !== 'flat')[0] || S.shifts(1)[0];
-  if (sh && sh.base) {
-    const diff = +(sh.last.value - sh.base.value).toFixed(2);
-    const months = Math.max(1, Math.round(sh.gapDays / 30));
-    const better = S.changeTone(sh.key, sh.base.value, sh.last.value, sh.last.refLow, sh.last.refHigh);
-    out.push({
-      id: 'shift', icon: 'chartline',
-      kind: better === 'better' ? 'стало лучше' : better === 'worse' ? 'ушло дальше' : 'сдвинулось',
-      value: `${diff > 0 ? '+' : ''}${S.trim(diff)}`, suffix: sh.unit,
-      title: sh.title,
-      sub: `за ${months} ${RU_MONTH(months)} · было ${S.trim(sh.base.value)}`,
-      tone: better === 'better' ? 'ok' : better === 'worse' ? 'out' : 'slate',
-      act: 'marker', data: { key: sh.key },
-      spark: sh.series,
-    });
-  }
-
-  /* 5. Изученность тела. Единственная плитка про то, чего ЕЩЁ НЕТ:
-        пустая система — это не «здоров», это «неизвестно». */
-  const cov = coverage(list);
+  /* 3–4. Состояние архива: сколько вне нормы и сколько просрочено.
+        Ноль здесь — хорошая новость, и её тоже надо показать. */
+  const fresh = list.filter(m => !m.stale);
   if (list.length) {
-    const blank = cov.blank.length;
+    const bad = fresh.filter(m => m.status === 'out').length;
     out.push({
-      id: 'coverage', icon: 'body',
-      kind: 'изучено',
-      value: `${cov.known}`, suffix: `/${cov.total}`,
-      title: blank ? `${blank} ${blank === 1 ? 'система' : blank < 5 ? 'системы' : 'систем'} без единого анализа` : 'все системы затронуты',
-      sub: blank ? cov.blank.slice(0, 3).map(s => s.title.toLowerCase()).join(', ') : `${cov.systemsTouched} из ${cov.systemsTotal} систем`,
-      tone: 'study',
+      id: 'out', icon: 'warning', tone: bad ? 'out' : 'ok',
+      label: 'Вне нормы',
+      value: `${bad}`,
+      tail: `/ ${list.length} ${plural(list.length, 'анализ', 'анализа', 'анализов')}`,
+      pct: list.length ? bad / list.length : 0,
       act: 'go', data: { r: 'markers' },
-      ring: cov.pct,
     });
-  }
 
-  /* 6. Что пора пересдать: срок из рекомендаций, а не выдумка. */
-  const due = S.dueList()[0];
-  if (due) {
-    const months = Math.max(1, Math.floor(due.daysOld / 30));
+    const due = S.dueList().length;
     out.push({
-      id: 'due', icon: 'clock',
-      kind: 'пересдать',
-      value: `${months}`, suffix: RU_MONTH(months),
-      title: due.title,
-      sub: `последний раз ${S.ruShort(due.last.date)}`,
-      tone: 'slate',
+      id: 'due', icon: 'clock', tone: 'due',
+      label: 'Пора пересдать',
+      value: `${due}`,
+      tail: `/ ${list.length} ${plural(list.length, 'анализ', 'анализа', 'анализов')}`,
+      pct: list.length ? due / list.length : 0,
       act: 'due', data: {},
     });
   }
 
-  /* 7. Дисциплина приёма — то немногое, что человек делает сам. */
-  const streak = takeStreak(today);
-  if (streak >= 3) {
-    out.push({
-      id: 'streak', icon: 'fire',
-      kind: 'подряд',
-      value: `${streak}`, suffix: streak === 1 ? 'день' : streak < 5 ? 'дня' : 'дней',
-      title: 'Принимаешь по расписанию',
-      sub: 'считаю только то, что отмечено',
-      tone: 'ok',
-      act: 'go', data: { r: 'meds' },
-    });
-  }
-
   return out;
+}
+
+function plural(n, a, b, c) {
+  const x = Math.abs(n) % 100, y = x % 10;
+  if (x > 10 && x < 20) return c;
+  if (y > 1 && y < 5) return b;
+  if (y === 1) return a;
+  return c;
 }
 
 /* Сколько дней подряд закрыты все назначенные приёмы. Сегодня не считаем:

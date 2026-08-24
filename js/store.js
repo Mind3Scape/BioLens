@@ -668,6 +668,15 @@ export function labsIn(series) {
 }
 
 /* Что пора пересдать — сроки из рекомендаций, где они есть */
+/* Через сколько этот показатель обычно пересдают. Нужно экрану показателя:
+   «что делать дальше» без срока — совет ни о чём. */
+export function recheckMonths(key, status) {
+  if (NO_RECHECK.includes(key)) return null;
+  const rule = RECHECK[key];
+  const bad = status === 'out' || status === 'edge';
+  return rule ? (bad ? rule.bad : rule.ok) : (bad ? 6 : 12);
+}
+
 export function dueList() {
   return markerList().filter(m => !NO_RECHECK.includes(m.key)).map(m => {
     const rule = RECHECK[m.key];

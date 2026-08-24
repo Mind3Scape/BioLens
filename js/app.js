@@ -407,6 +407,16 @@ async function handleAction(el) {
     }
     case 'explain': await explainMarker(el.dataset.key); break;
     case 'ask-preset': sendQuestion(el.dataset.q); break;
+    /* Вопрос про конкретный показатель прямо с его экрана: человек уже
+       смотрит на число — не заставляем его пересказывать вопрос заново. */
+    case 'ask-marker': {
+      const m = S.markerList().find(x => x.key === el.dataset.key);
+      if (!m) break;
+      go('ask');
+      app.focusAsk = false;
+      sendQuestion(`Объясни простыми словами мой показатель «${m.title}»: сейчас ${S.trim(m.last.value)} ${m.unit}, норма ${S.fmtRef(m.last)}, замер от ${S.ruDate(m.last.date)}. Что это значит и на что обратить внимание?`);
+      break;
+    }
     case 'ask-send': sendQuestion($('#askInput')?.value || ''); break;
     case 'food-feedback': await foodFeedback(); break;
     case 'copy-due': {

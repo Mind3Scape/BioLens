@@ -254,10 +254,12 @@ export function chart(series, { w = 340, h = 210, unit = '' } = {}) {
   const X = t => padL + ((t - tMin) / tSpan) * innerW;
   const Y = v => padT + innerH - ((v - vMin) / ((vMax - vMin) || 1)) * innerH;
 
-  /* Коридор нормы — тихий фон: серая заливка и пунктирные границы.
-     Цветом на этом графике горят только сами замеры; если коридор красить
-     зелёным, он забирает всё внимание и «в норме» кричит громче, чем точка,
-     вышедшая за границу. */
+  /* Коридор нормы — очень бледная ЗЕЛЁНАЯ зона со скруглёнными углами.
+     Прежде он был серым из осторожности: залитый насыщенным зелёным, коридор
+     кричал «всё хорошо» громче, чем точка, вышедшая за границу. Но теперь
+     цветом горит сама линия, и серая зона рядом с ней читалась как «тут
+     ничего не значит». На 8% зелёный не кричит, зато мгновенно отвечает на
+     главный вопрос графика: «линия внутри зелёного или снаружи». */
   let band = '', edges = '';
   const seg = (i) => {
     const p = pts[i];
@@ -277,9 +279,10 @@ export function chart(series, { w = 340, h = 210, unit = '' } = {}) {
     if (p.refLow == null && p.refHigh == null) continue;
     const top = Y(p.refHigh ?? vMax), bot = Y(p.refLow ?? vMin);
     const width = Math.max(0, x1 - x0);
-    band += `<rect x="${x0.toFixed(1)}" y="${top.toFixed(1)}" width="${width.toFixed(1)}" height="${Math.max(0, bot - top).toFixed(1)}" fill="var(--band)"/>`;
-    if (p.refHigh != null) edges += `<line x1="${x0.toFixed(1)}" y1="${top.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${top.toFixed(1)}" stroke="var(--band-line)" stroke-width="1" stroke-dasharray="4 4"/>`;
-    if (p.refLow != null) edges += `<line x1="${x0.toFixed(1)}" y1="${bot.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${bot.toFixed(1)}" stroke="var(--band-line)" stroke-width="1" stroke-dasharray="4 4"/>`;
+    band += `<rect x="${x0.toFixed(1)}" y="${top.toFixed(1)}" width="${width.toFixed(1)}" height="${Math.max(0, bot - top).toFixed(1)}" rx="8" fill="color-mix(in srgb, var(--ok-dot) 9%, transparent)"/>`;
+    const edgeCol = 'color-mix(in srgb, var(--ok-dot) 34%, transparent)';
+    if (p.refHigh != null) edges += `<line x1="${x0.toFixed(1)}" y1="${top.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${top.toFixed(1)}" stroke="${edgeCol}" stroke-width="1.2" stroke-dasharray="4 4"/>`;
+    if (p.refLow != null) edges += `<line x1="${x0.toFixed(1)}" y1="${bot.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${bot.toFixed(1)}" stroke="${edgeCol}" stroke-width="1.2" stroke-dasharray="4 4"/>`;
   }
 
   /* Числа границ — прямо на своих линиях, справа, где линия замеров их не задевает.
@@ -320,7 +323,7 @@ export function chart(series, { w = 340, h = 210, unit = '' } = {}) {
          перестаёт бросаться в глаза. Горит только неблагополучие. */
       const c0 = pts[i - 1].status === 'ok' ? 'var(--ink)' : toneDot(pts[i - 1].status);
       const c1 = pts[i].status === 'ok' ? 'var(--ink)' : toneDot(pts[i].status);
-      path += tonedSegment(d, xs[i - 1], ys[i - 1], xs[i], ys[i], c0, c1, 2.4, defs);
+      path += tonedSegment(d, xs[i - 1], ys[i - 1], xs[i], ys[i], c0, c1, 3, defs);
     }
   }
   const gapMark = biggest ? (() => {
@@ -350,9 +353,18 @@ export function chart(series, { w = 340, h = 210, unit = '' } = {}) {
     out += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r + 2.2}" fill="var(--surface)"/>
       <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r}" fill="${fill}"/>`;
     if (isLast) {
-      const lx = Math.min(w - 20, Math.max(20, cx));
-      const ly = Math.max(padT + 11, cy - 16);
-      out += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="11.5" font-weight="800" fill="${toneVar(p.status)}" text-anchor="middle">${trim(p.value)}</text>`;
+      /* Пилюля со значением вместо голой цифры и тонкий отвес до оси: глаз
+         сразу связывает «вот это число» с «вот эта дата». У голого текста
+         на графике не было ни фона, ни привязки — он висел сам по себе. */
+      const label = trim(p.value);
+      const bw = String(label).length * 7.2 + 16;
+      const lx = Math.min(w - padR - bw / 2, Math.max(padL + bw / 2, cx));
+      const ly = Math.max(padT + 13, cy - 18);
+      out = `<line x1="${cx.toFixed(1)}" y1="${cy.toFixed(1)}" x2="${cx.toFixed(1)}" y2="${(padT + innerH).toFixed(1)}"
+          stroke="${fill}" stroke-width="1.2" stroke-dasharray="2 3" opacity="0.5"/>` + out;
+      out += `<rect x="${(lx - bw / 2).toFixed(1)}" y="${(ly - 12).toFixed(1)}" width="${bw.toFixed(1)}" height="18" rx="9"
+          fill="var(--surface)" stroke="${fill}" stroke-width="1.2"/>
+        <text x="${lx.toFixed(1)}" y="${(ly + 1).toFixed(1)}" font-size="11.5" font-weight="800" fill="${toneVar(p.status)}" text-anchor="middle">${label}</text>`;
     }
     return out;
   }).join('');
@@ -368,8 +380,13 @@ export function chart(series, { w = 340, h = 210, unit = '' } = {}) {
     return `<text x="${cx.toFixed(1)}" y="${(padT + innerH + 18).toFixed(1)}" font-size="10" fill="${isLast ? 'var(--ink2)' : 'var(--ink3)'}" font-weight="${isLast ? 700 : 500}" text-anchor="middle">${stamp(p.date)}</text>`;
   }).join('');
 
+  /* Мелкие засечки под каждым замером: видно, что точек больше, чем подписей,
+     и что они стоят неравномерно — то есть по оси идёт время, а не порядок. */
+  const axis = `<line x1="${padL}" y1="${(padT + innerH).toFixed(1)}" x2="${(w - padR).toFixed(1)}" y2="${(padT + innerH).toFixed(1)}" stroke="var(--hair)" stroke-width="1"/>`
+    + xs.map(x => `<line x1="${x.toFixed(1)}" y1="${(padT + innerH).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(padT + innerH + 4).toFixed(1)}" stroke="var(--ink4)" stroke-width="1" opacity="0.45"/>`).join('');
+
   return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block" font-family="-apple-system,sans-serif">
-    ${defs.length ? `<defs>${defs.join('')}</defs>` : ''}${band}${edges}${bandLabel}${path}${gapMark}${refTags}${dots}${labels}
+    ${defs.length ? `<defs>${defs.join('')}</defs>` : ''}${band}${edges}${bandLabel}${axis}${path}${gapMark}${refTags}${dots}${labels}
   </svg>`;
 }
 
@@ -393,34 +410,58 @@ export function rangeBar(value, low, high, unit = '', status) {
   const lo = low != null ? Number(low) : null;
   const hi = high != null ? Number(high) : null;
 
-  // рисуем шкалу с запасом по краям, чтобы значение вне нормы было видно
+  /* Гребёнка из макета вместо полосы-таблетки. Шкала набрана вертикальными
+     штрихами: зелёные там, где значение попало бы в норму, розовые — где нет.
+     Это читается за долю секунды и без легенды: «я стою в зелёной части» или
+     «я стою в красной». Прежняя серая полоса требовала сначала найти границы,
+     потом сравнить с меткой — три движения глазом вместо одного.
+
+     Штрихи, а не сплошная заливка: сплошная зелёная зона выглядит как
+     «одобрено», а гребёнка — как шкала прибора, чем она и является. */
   const span = (hi != null && lo != null) ? (hi - lo) : Math.abs(v) * 0.6 || 1;
-  const from = Math.min(lo != null ? lo : v, v) - span * 0.4;
-  const to = Math.max(hi != null ? hi : v, v) + span * 0.4;
-  const pos = (x) => Math.max(0, Math.min(100, ((x - from) / ((to - from) || 1)) * 100));
+  let from = Math.min(lo != null ? lo : v, v) - span * 0.45;
+  let to = Math.max(hi != null ? hi : v, v) + span * 0.45;
+  if (lo != null && lo >= 0 && from < 0) from = 0;
+  const W = 300, H = 52, padX = 3;
+  const TOP = 2, TICK_H = 22;
+  const X = (x) => padX + ((x - from) / ((to - from) || 1)) * (W - padX * 2);
 
-  const bandL = lo != null ? pos(lo) : 0;
-  const bandR = hi != null ? pos(hi) : 100;
-  const at = pos(v);
   const st = status || ((lo != null && v < lo) || (hi != null && v > hi) ? 'out' : 'ok');
-  const color = toneDot(st);
+  const inBand = (x) => (lo == null || x >= lo) && (hi == null || x <= hi);
 
-  /* Засечка с числом на самой границе коридора: человек должен видеть,
-     откуда докуда идёт норма, не переводя взгляд в другое место экрана. */
-  const edge = (x) => `
-    <div style="position:absolute;left:${pos(x)}%;top:5px;width:1.5px;height:18px;border-radius:2px;background:var(--band-line);transform:translateX(-0.75px)"></div>
-    <div style="position:absolute;left:${pos(x)}%;top:26px;transform:translateX(-50%);
-      font-size:10.5px;font-weight:650;color:var(--ink3);white-space:nowrap">${trim(x)}</div>`;
+  let comb = '';
+  const STEP = 4.2;
+  for (let x = padX; x <= W - padX; x += STEP) {
+    const val = from + ((x - padX) / (W - padX * 2)) * (to - from);
+    const ok = inBand(val);
+    comb += `<rect x="${x.toFixed(1)}" y="${TOP}" width="1.7" height="${TICK_H}" rx="0.85"
+      fill="${ok ? 'color-mix(in srgb, var(--ok-dot) 40%, transparent)' : 'color-mix(in srgb, var(--bad-dot) 30%, transparent)'}"/>`;
+  }
 
-  return `<div style="margin-top:18px;margin-bottom:2px">
-    <div style="position:relative;height:42px">
-      <div style="position:absolute;left:0;right:0;top:9px;height:10px;border-radius:99px;background:var(--hair)"></div>
-      <div style="position:absolute;left:${bandL}%;width:${Math.max(2, bandR - bandL)}%;top:9px;height:10px;border-radius:99px;background:var(--band)"></div>
-      ${lo != null ? edge(lo) : ''}
-      ${hi != null ? edge(hi) : ''}
-      <div style="position:absolute;left:${at}%;top:2px;width:5px;height:24px;border-radius:99px;background:${color};
-        box-shadow:0 0 0 3px var(--surface);transform:translateX(-2.5px)"></div>
-    </div>
+  /* Метки: тонкая линия сквозь гребёнку, точка и число под ней. «Ты» —
+     цветом состояния: это единственная метка, которая говорит о человеке. */
+  const marks = [];
+  if (lo != null) marks.push({ x: lo, label: trim(lo), color: 'var(--ink3)', me: false });
+  if (hi != null) marks.push({ x: hi, label: trim(hi), color: 'var(--ink3)', me: false });
+  marks.push({ x: v, label: 'Ты', color: toneDot(st), me: true });
+
+  const meX = X(v);
+  const drawn = marks.map(m => {
+    const mx = X(m.x);
+    /* Подпись границы, севшая вплотную к «Ты», не рисуется: число всё равно
+       стоит строкой ниже, а два наложенных числа не читает никто. */
+    const hideLabel = !m.me && Math.abs(mx - meX) < 26;
+    return `<line x1="${mx.toFixed(1)}" y1="${TOP}" x2="${mx.toFixed(1)}" y2="${(TOP + TICK_H + 5).toFixed(1)}"
+        stroke="${m.color}" stroke-width="${m.me ? 2.2 : 1.2}" stroke-linecap="round"/>
+      <circle cx="${mx.toFixed(1)}" cy="${(TOP + TICK_H + 7).toFixed(1)}" r="${m.me ? 2.4 : 1.8}" fill="${m.color}"/>
+      ${hideLabel ? '' : `<text x="${mx.toFixed(1)}" y="${(TOP + TICK_H + 22).toFixed(1)}" text-anchor="middle"
+        font-size="11.5" font-weight="${m.me ? 800 : 600}" fill="${m.color}">${m.label}</text>`}`;
+  }).join('');
+
+  return `<div style="margin-top:16px;margin-bottom:2px">
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" font-family="-apple-system,sans-serif">
+      ${comb}${drawn}
+    </svg>
   </div>`;
 }
 

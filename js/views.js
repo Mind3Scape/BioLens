@@ -140,47 +140,29 @@ function tileGrid(app) {
 
 function tileEl(t, i) {
   const attrs = Object.entries(t.data || {}).map(([k, v]) => ` data-${k}="${esc(v)}"`).join('');
-  /* Счётчик и показатель говорят разными углами плитки.
-     У счётчика (приём, еда, изученность) в углу стоит ПРОЦЕНТ, а по низу идёт
-     точечная полоса из макета: кольцо в 24 пикселя показывало ту же долю, но
-     прочесть по нему «сколько осталось» было нельзя.
-     У показателя в углу — линия его состояния: маленькая, но той же породы,
-     что и большой график. */
-  const corner = t.ring != null ? `<div class="tpct">${Math.round(Math.max(0, Math.min(1, t.ring)) * 100)}%</div>` : '';
-  /* И линия, и точечная полоса живут ВНИЗУ плитки, во всю ширину. В углу
-     линия отнимала место у подписи: «СТАЛО ЛУЧШЕ» обрезалось до «СТАЛО …»,
-     а плитка без имени перестаёт быть наблюдением. Внизу график ещё и
-     втрое крупнее — по нему видно движение, а не только последнюю точку. */
-  const foot = t.spark ? `<div class="tline">${statusLine(t.spark, { w: 150, h: 30, fluid: true })}</div>`
-    : t.ring != null ? dotBar(t.ring)
-    : '';
+  const pct = Math.round(Math.max(0, Math.min(1, t.pct || 0)) * 100);
   return `<button class="tile2 t-${t.tone}" style="animation-delay:${Math.min(i, 6) * 28}ms" data-act="${esc(t.act)}"${attrs}>
-    <div class="tk">${t.icon ? `<span class="tic">${icon(t.icon, 'ico s')}</span>` : ''}<span>${esc(t.kind)}</span></div>
-    ${corner}
-    <div class="tv${t.small ? ' short' : ''}">${esc(t.value)}${t.suffix ? `<span class="ts">${esc(t.suffix)}</span>` : ''}</div>
-    <div class="tt">${esc(t.title)}</div>
-    <div class="td">${esc(t.sub)}</div>
-    ${foot}
+    <div class="tk"><span class="tic">${icon(t.icon, 'ico s')}</span><span class="tpct">${pct}%</span></div>
+    <div class="tbody">
+      <div class="tlab">${esc(t.label)}</div>
+      <div class="tv">${esc(t.value)}<span class="ts">${esc(t.tail || '')}</span></div>
+    </div>
+    ${dotBar(t.pct || 0)}
   </button>`;
 }
 
 /* ── лента показателей ───────────────────────────────────────────
-   Лучшее из трёх мест, сведённое в одну карточку.
+   Лучшее из трёх мест в одной карточке. У Ornament на главной идёт
+   горизонтальная лента биомаркеров: в ширину одной карточки помещается
+   показатель целиком — число, свежесть и ЛИНИЯ. Это отвечает на вопрос, на
+   который плитки-счётчики не отвечают: не «сколько у меня плохо», а «что
+   именно и куда оно движется».
 
-   У Ornament на главной идёт горизонтальная лента биомаркеров: в ширину
-   одной нашей плитки помещается показатель целиком — число, свежесть и
-   ЛИНИЯ. Это отвечает на вопрос, на который плитки не отвечали: не «что у
-   меня плохо прямо сейчас», а «куда оно движется». Оттуда же — возраст
-   замера справа от названия: «2 мес.» честнее, чем дата, которую надо
-   вычитать в уме.
+   Из макета — подача «выше / ниже нормы»: число цветом, под ним словами и
+   сам коридор числами.
 
-   Из макета — подача «выше / ниже нормы»: число цветом, а под ним словами и
-   сам коридор числами. Цвет читается за долю секунды, слово не даёт
-   ошибиться, коридор отвечает «а сколько должно быть».
-
-   Наше правило, которое никто из них не соблюдает: показатель без второго
-   замера в ленту не попадает. Лента — про движение; одна точка движения не
-   имеет, и её место в списке, а не здесь. */
+   Наше правило, которого нет ни у кого: показатель без второго замера в
+   ленту не попадает. Лента про движение, а одна точка не движется. */
 
 const ruAgo = (days) => {
   if (days <= 1) return 'сегодня';
@@ -195,8 +177,6 @@ function markerStrip(app) {
   if (list.length < 2) return '';
 
   const cards = list.map(m => {
-    /* Коридор показываем только когда он есть: «не указана» на карточке —
-       это шум там, где человек ждёт числа. */
     const hasRef = m.last.refLow != null || m.last.refHigh != null;
     const ref = hasRef ? S.fmtRef(m.last) : '';
     return `<button class="mcard" data-act="marker" data-key="${esc(m.key)}">
@@ -664,6 +644,77 @@ function plural(n, a, b, c) {
 
 /* ══ ОДИН ПОКАЗАТЕЛЬ ═════════════════════════════════════════ */
 
+/* Объяснение показателя человеческим языком.
+   Строится из трёх источников, и ни один не выдумывается:
+   • числа из бланка (где ты относительно границ, насколько изменилось),
+   • наши же расчёты (значим ли сдвиг, те же ли лаборатории),
+   • справочник reference.js — что это за показатель и почему бывает так.
+   Порядок фраз — от «про тебя» к «про показатель», а не наоборот. */
+function humanRead({ key, last, prev, base, st, unit, series, showDiff, diff, gapDays, period, noise, twoLabsCloseInTime, sig }) {
+  const ref = info(key);
+  const v = Number(last.value);
+  const lo = last.refLow, hi = last.refHigh;
+  const lines = [];
+
+  // 1. Где ты относительно границ — своими числами, а не словом «отклонение»
+  if (lo == null && hi == null) {
+    lines.push(`Границ нормы в этом бланке не было, а типовых для показателя я не знаю — сказать «много» или «мало» тут не по чему.`);
+  } else if (st === 'out' && hi != null && v > hi) {
+    lines.push(`Твои <b>${S.trim(v)} ${esc(unit)}</b> — выше верхней границы на <b>${S.trim(+(v - hi).toFixed(2))}</b>. Норма в бланке — ${esc(S.fmtRef(last))}.`);
+  } else if (st === 'out' && lo != null && v < lo) {
+    lines.push(`Твои <b>${S.trim(v)} ${esc(unit)}</b> — ниже нижней границы на <b>${S.trim(+(lo - v).toFixed(2))}</b>. Норма в бланке — ${esc(S.fmtRef(last))}.`);
+  } else if (st === 'edge') {
+    const near = (hi != null && Math.abs(v - hi) <= Math.abs(v - (lo ?? v))) ? `верхней (${S.trim(hi)})` : `нижней (${S.trim(lo)})`;
+    lines.push(`Твои <b>${S.trim(v)} ${esc(unit)}</b> — внутри нормы, но у самого края: близко к ${near} границе. Это ещё норма, но запас маленький.`);
+  } else {
+    lines.push(`Твои <b>${S.trim(v)} ${esc(unit)}</b> — внутри нормы ${esc(S.fmtRef(last))}. По этому показателю всё в порядке.`);
+  }
+
+  // 2. Что изменилось — только если есть с чем сравнивать
+  if (showDiff && base) {
+    const dir = diff > 0 ? 'вырос' : 'снизился';
+    const когда = period === 'с прошлого раза' ? 'с прошлого раза' : period;
+    let s = `Показатель <b>${dir} на ${S.trim(Math.abs(diff))} ${esc(unit)}</b> ${когда} — было ${S.trim(base.value)}, стало ${S.trim(v)}.`;
+    if (twoLabsCloseInTime) s += ` Но замеры сделаны в разных лабораториях с разницей в ${gapDays} ${plural(gapDays, 'день', 'дня', 'дней')} — за такой срок показатель не меняется, так что это скорее разница методик, чем твоя.`;
+    else if (sig?.significant === false) s += ` Это меньше естественного разброса показателя — так колеблется даже стабильный результат.`;
+    else if (sig?.significant === true) s += ` Это выходит за естественный разброс — похоже на настоящий сдвиг, а не на дрожание цифры.`;
+    lines.push(s);
+  } else if (series.length === 1) {
+    lines.push(`Это <b>единственный замер</b>. Одно число говорит только «сколько сейчас» и ничего не говорит о том, растёт оно или падает.`);
+  }
+
+  // 3. Что это вообще за показатель + почему бывает так
+  if (ref?.what) lines.push(esc(ref.what));
+  if (st !== 'ok' && st !== 'unknown') {
+    const why = (hi != null && v > hi) ? ref?.high : (lo != null && v < lo) ? ref?.low : null;
+    if (why) lines.push(`<b>Почему так бывает.</b> ${esc(why)}`);
+  }
+
+  let out = `<div class="card hread">
+    <div class="hr-hd">${icon('sparkle', 'ico s')}<span>Что это значит</span></div>
+    ${lines.map(l => `<p>${l}</p>`).join('')}
+  </div>`;
+
+  // 4. Что делать дальше — отдельной карточкой, как в макете
+  const todo = [];
+  const months = S.recheckMonths(key, st);
+  if (st === 'out' && ref?.redFlag) todo.push(esc(ref.redFlag));
+  if (st === 'out' || st === 'edge') todo.push('Само число диагнозом не является: его читают вместе с остальными анализами и с тем, что происходит с человеком. Это разговор с врачом.');
+  if (months) todo.push(`Такой показатель обычно пересдают <b>раз в ${months === 12 ? 'год' : months === 6 ? 'полгода' : months + ' мес.'}</b>${(st === 'out' || st === 'edge') ? ' — при отклонении чаще' : ''}. Последний замер: ${S.ruDate(last.date)}.`);
+  if (ref?.prep && (st === 'out' || st === 'edge')) {
+    const tip = ref.prep.replace(/^(Голодание не требуется|Специальная подготовка не нужна)[^.]*\.\s*/, '').trim();
+    if (tip) todo.push(`<b>Перед пересдачей.</b> ${esc(tip)}`);
+  }
+  if (todo.length) {
+    out += `<div class="card hread">
+      <div class="hr-hd">${icon('target', 'ico s')}<span>Что делать дальше</span></div>
+      ${todo.map(l => `<p>${l}</p>`).join('')}
+      <button class="mini" data-act="ask-marker" data-key="${esc(key)}" style="margin-top:12px">Спросить про этот показатель</button>
+    </div>`;
+  }
+  return out;
+}
+
 export function markerDetail(app) {
   const key = app.param.key;
   const series = S.seriesFor(key);
@@ -714,8 +765,18 @@ export function markerDetail(app) {
         : 'Границы нормы в бланке не указаны — сказать «много» или «мало» не по чему'}</div>
   </div>`;
 
-  /* График сразу за числом: сначала «сколько сейчас», потом «как шло». Всё
-     остальное — объяснения, оговорки, список замеров — идёт после. */
+  /* ── ЧТО ЭТО ЗНАЧИТ, человеческим языком ──────────────────────
+     Раньше сразу за числом шёл график, а объяснение пряталось ниже и звучало
+     как словарь: «фермент внутри клеток печени». На вопрос «и что это для
+     меня?» экран не отвечал вовсе.
+
+     Порядок из макета и он же правильный: сначала ГДЕ ТЫ относительно нормы
+     своими числами, потом ЧТО ИЗМЕНИЛОСЬ с прошлого раза, потом ЧТО ЭТО
+     ВООБЩЕ ЗА ШТУКА, и только потом — почему так бывает. Каждая фраза
+     опирается на число из бланка или на справочник; ничего не выдумываем. */
+  html += humanRead({ key, last, prev, base, st, unit, series, showDiff, diff, gapDays, period, noise, twoLabsCloseInTime, sig });
+
+  /* График сразу за объяснением: сначала «что это значит», потом «как шло». */
   if (series.length === 1) {
     html += `<div class="card" style="padding:20px 16px 16px;text-align:center">
       ${chart(series, { unit })}
@@ -730,20 +791,13 @@ export function markerDetail(app) {
   const ref = info(key);
   if (ref) {
     const open = !!app.infoOpen?.[key];
+    /* Справочник — свёрнутый, и без «что это» и «стоит показать врачу»: обе
+       фразы уже сказаны выше, в блоке про тебя. Повторённая слово в слово,
+       вторая карточка читалась как «приложение зациклилось». Здесь остаётся
+       то, чего в объяснении нет: обе стороны отклонения, подготовка и с чем
+       этот показатель смотрят в паре. */
     html += `<div class="card">
-      <div class="row" style="align-items:flex-start">
-        ${icon('eye', 'ico s')}
-        <div class="grow">
-          <div class="cap" style="padding:0 0 6px">Что это значит</div>
-          <div class="sm" style="font-size:14px;line-height:1.55;color:var(--ink)">${esc(ref.what)}</div>
-        </div>
-      </div>
-      ${!open && st === 'out' && ref.redFlag ? `
-        <div class="divide"></div>
-        <div class="row" style="align-items:flex-start">${icon('warning', 'ico s')}
-          <div class="grow sm" style="line-height:1.55">${esc(ref.redFlag)}</div></div>` : ''}
       ${open ? `
-        <div class="divide"></div>
         <div class="cap" style="padding:0 0 5px">Почему бывает выше</div>
         <div class="sm" style="line-height:1.55">${esc(ref.high)}</div>
         <div class="divide"></div>
@@ -759,9 +813,9 @@ export function markerDetail(app) {
         <div class="divide"></div>
         <div class="row" style="align-items:flex-start">${icon('warning', 'ico s')}
           <div class="grow sm" style="line-height:1.55">${esc(ref.redFlag)}</div></div>
+        <div class="divide"></div>
       ` : ''}
-      <div class="divide"></div>
-      <button class="mini" data-act="toggle-info" data-key="${esc(key)}">${open ? 'Свернуть' : 'Подробнее: выше, ниже, как сдавать'}</button>
+      <button class="mini" data-act="toggle-info" data-key="${esc(key)}">${open ? 'Свернуть справку' : 'Справка: почему бывает выше и ниже, как сдавать'}</button>
     </div>`;
   }
 
