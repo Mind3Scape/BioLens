@@ -5,7 +5,7 @@ import * as S from './store.js';
 import * as db from './db.js';
 import * as MED from './meds.js';
 import { icon } from './icons.js';
-import { esc, sparkline, chart, statusDot, statusTag, statusWord, toneVar, inkTone, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale, gauge, kcalRing } from './ui.js';
+import { esc, sparkline, statusLine, dotBar, chart, statusDot, statusTag, statusWord, toneVar, inkTone, toneDot, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale, gauge, kcalRing } from './ui.js';
 import { markerTitle, markerGroup, MARKERS } from './markers.js';
 import { info } from './reference.js';
 import { tgUserName, tgUser, inTelegram } from './telegram.js';
@@ -90,10 +90,22 @@ export function summary(app) {
   }
 
   html += tileGrid(app);
+  html += markerStrip(app);
   html += todayBlock(app, today);
   html += archive(app);
 
-  html += `<div class="grp">
+  /* «Дополнительно» из макета: двери, за которыми лежат списки. Числа рядом
+     важнее названий — по ним видно, стоит ли туда заходить сегодня. Архива
+     документов здесь нет намеренно: его полка стоит выше на этом же экране,
+     и второй вход в одно место — обещание, что там что-то другое. */
+  const dueCount = S.dueList().length;
+  const allCount = S.markerKeys().length;
+  html += `<div class="cap">Дополнительно</div>
+  <div class="grp">
+    ${dueCount ? `<div class="gi" data-act="go" data-r="due">${icon('clock', 'ico s')}<div class="t">Пора пересдать</div>
+      <div class="v">${dueCount}</div>${chevron()}</div>` : ''}
+    ${allCount ? `<div class="gi" data-act="go" data-r="markers-all">${icon('chartline', 'ico s')}<div class="t">Все показатели списком</div>
+      <div class="v">${allCount}</div>${chevron()}</div>` : ''}
     <div class="gi" data-act="go" data-r="passport">${icon('shield', 'ico s')}<div class="t">Паспорт здоровья</div>
       <div class="v">${passportSummary()}</div>${chevron()}</div>
     <div class="gi" data-act="doctor">${icon('stethoscope', 'ico s')}<div class="t">Страница для врача</div>${chevron()}</div>
@@ -128,8 +140,19 @@ function tileGrid(app) {
 
 function tileEl(t, i) {
   const attrs = Object.entries(t.data || {}).map(([k, v]) => ` data-${k}="${esc(v)}"`).join('');
-  const corner = t.spark ? `<div class="tsp">${sparkline(t.spark, { w: 58, h: 20 })}</div>`
-    : t.ring != null ? `<div class="tsp">${ring(t.ring, { size: 24, stroke: 3.4, color: 'currentColor' })}</div>`
+  /* Счётчик и показатель говорят разными углами плитки.
+     У счётчика (приём, еда, изученность) в углу стоит ПРОЦЕНТ, а по низу идёт
+     точечная полоса из макета: кольцо в 24 пикселя показывало ту же долю, но
+     прочесть по нему «сколько осталось» было нельзя.
+     У показателя в углу — линия его состояния: маленькая, но той же породы,
+     что и большой график. */
+  const corner = t.ring != null ? `<div class="tpct">${Math.round(Math.max(0, Math.min(1, t.ring)) * 100)}%</div>` : '';
+  /* И линия, и точечная полоса живут ВНИЗУ плитки, во всю ширину. В углу
+     линия отнимала место у подписи: «СТАЛО ЛУЧШЕ» обрезалось до «СТАЛО …»,
+     а плитка без имени перестаёт быть наблюдением. Внизу график ещё и
+     втрое крупнее — по нему видно движение, а не только последнюю точку. */
+  const foot = t.spark ? `<div class="tline">${statusLine(t.spark, { w: 150, h: 30, fluid: true })}</div>`
+    : t.ring != null ? dotBar(t.ring)
     : '';
   return `<button class="tile2 t-${t.tone}" style="animation-delay:${Math.min(i, 6) * 28}ms" data-act="${esc(t.act)}"${attrs}>
     <div class="tk">${t.icon ? `<span class="tic">${icon(t.icon, 'ico s')}</span>` : ''}<span>${esc(t.kind)}</span></div>
@@ -137,7 +160,59 @@ function tileEl(t, i) {
     <div class="tv${t.small ? ' short' : ''}">${esc(t.value)}${t.suffix ? `<span class="ts">${esc(t.suffix)}</span>` : ''}</div>
     <div class="tt">${esc(t.title)}</div>
     <div class="td">${esc(t.sub)}</div>
+    ${foot}
   </button>`;
+}
+
+/* ── лента показателей ───────────────────────────────────────────
+   Лучшее из трёх мест, сведённое в одну карточку.
+
+   У Ornament на главной идёт горизонтальная лента биомаркеров: в ширину
+   одной нашей плитки помещается показатель целиком — число, свежесть и
+   ЛИНИЯ. Это отвечает на вопрос, на который плитки не отвечали: не «что у
+   меня плохо прямо сейчас», а «куда оно движется». Оттуда же — возраст
+   замера справа от названия: «2 мес.» честнее, чем дата, которую надо
+   вычитать в уме.
+
+   Из макета — подача «выше / ниже нормы»: число цветом, а под ним словами и
+   сам коридор числами. Цвет читается за долю секунды, слово не даёт
+   ошибиться, коридор отвечает «а сколько должно быть».
+
+   Наше правило, которое никто из них не соблюдает: показатель без второго
+   замера в ленту не попадает. Лента — про движение; одна точка движения не
+   имеет, и её место в списке, а не здесь. */
+
+const ruAgo = (days) => {
+  if (days <= 1) return 'сегодня';
+  if (days < 14) return `${days} дн.`;
+  if (days < 60) return `${Math.round(days / 7)} нед.`;
+  const mo = Math.round(days / 30);
+  return mo < 24 ? `${mo} мес.` : `${Math.floor(days / 365)} г.`;
+};
+
+function markerStrip(app) {
+  const list = S.markerList().filter(m => !m.stale && m.count > 1).slice(0, 8);
+  if (list.length < 2) return '';
+
+  const cards = list.map(m => {
+    /* Коридор показываем только когда он есть: «не указана» на карточке —
+       это шум там, где человек ждёт числа. */
+    const hasRef = m.last.refLow != null || m.last.refHigh != null;
+    const ref = hasRef ? S.fmtRef(m.last) : '';
+    return `<button class="mcard" data-act="marker" data-key="${esc(m.key)}">
+      <div class="mc-top"><span class="mc-nm">${esc(m.title)}</span><span class="mc-ago">${esc(ruAgo(m.daysOld))}</span></div>
+      <div class="mc-val" style="color:${inkTone(m.status)}">${esc(S.trim(m.last.value))}<span>${esc(m.unit || '')}</span></div>
+      <div class="mc-ch">${statusLine(m.series, { w: 134, h: 44 })}</div>
+      <div class="mc-ft">
+        <span style="color:${toneVar(m.status)}">${esc(statusWord(m.status, m.last.value, m.last.refLow, m.last.refHigh))}</span>
+        ${ref ? `<span class="mc-ref">${esc(ref)}</span>` : ''}
+      </div>
+    </button>`;
+  }).join('');
+
+  return `<div class="caprow"><div class="cap">Показатели</div>
+    <button class="capln" data-act="go" data-r="markers-all">все ${S.markerKeys().length}${chevron()}</button></div>
+    <div class="mstrip">${cards}</div>`;
 }
 
 /* ── день на главной ─────────────────────────────────────────────

@@ -417,6 +417,9 @@ html[data-theme="dark"] .tile .ph{background:#F2F2F0}
    буквами. Кружок тот же, что у систем организма: один приём на всё. */
 .tile2 .tk{font-size:9.5px;font-weight:800;letter-spacing:0.7px;text-transform:uppercase;color:var(--accent,var(--ink4));
   display:flex;align-items:center;gap:6px;min-height:22px;padding-right:24px}
+/* Линия состояния — внизу плитки, во всю ширину: в углу она отнимала место
+   у подписи, и «СТАЛО ЛУЧШЕ» обрезалось до «СТАЛО …». */
+.tline{margin-top:auto;padding-top:9px;margin-left:-1px;margin-right:-1px}
 .tile2 .tk span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tic{width:22px;height:22px;min-width:22px;border-radius:99px;display:flex;align-items:center;justify-content:center;
   color:var(--accent,var(--ink3));background:color-mix(in srgb, var(--accent, var(--ink3)) 14%, transparent)}
@@ -451,6 +454,48 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
 .tile2.wide .ap b{color:#fff;font-weight:750}
 .tile2.wide.quiet{opacity:.72}
 .tile2.wide:active{transform:none}
+
+/* ── точечная полоса и процент на плитке (из макета) ──
+   Кольцо в 24 пикселя честно показывало долю, но прочесть по нему «сколько
+   осталось» было нельзя. Точки считаются глазом, а процент рядом называет
+   ту же долю числом — для тех, кому важно точное. */
+.tpct{position:absolute;right:11px;top:12px;font-size:11.5px;font-weight:800;letter-spacing:-0.3px;
+  color:var(--accent,var(--ink3));opacity:.8}
+.dbar{position:relative;display:flex;align-items:center;gap:2px;height:7px;margin-top:auto;padding-top:11px;
+  box-sizing:content-box;color:var(--accent,var(--ink3))}
+.dbar i{flex:1 1 0;height:3px;border-radius:99px;background:currentColor;opacity:.2}
+.dbar i.on{opacity:.55}
+.dbar b{position:absolute;bottom:0;width:2.5px;height:7px;border-radius:2px;background:currentColor}
+
+/* ── лента показателей ──
+   Горизонтальная лента, а не ещё одна сетка: показателей десятки, вертикальным
+   списком они съедают главную целиком. В ширину помещается показатель целиком —
+   число, свежесть, линия состояния и коридор. */
+.caprow{display:flex;align-items:center;justify-content:space-between;padding:0 3px 5px}
+.caprow .cap{padding:0}
+.capln{display:flex;align-items:center;gap:1px;background:none;border:none;padding:0;cursor:pointer;
+  font-family:inherit;font-size:11.5px;font-weight:700;letter-spacing:-0.2px;color:var(--ink3)}
+.capln .chev{width:11px;height:11px;min-width:11px}
+.capln:active{opacity:.6}
+
+.mstrip{display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;
+  margin:0 -14px 10px;padding:1px 14px 4px;-webkit-overflow-scrolling:touch}
+.mstrip::-webkit-scrollbar{height:0}
+.mcard{scroll-snap-align:start;flex:0 0 auto;width:158px;background:var(--surface);border:none;
+  border-radius:var(--r);box-shadow:var(--shadow);padding:11px 12px 12px;
+  font-family:inherit;text-align:left;cursor:pointer;color:var(--ink);display:flex;flex-direction:column;
+  animation:tin .34s cubic-bezier(.22,1,.36,1) both}
+.mcard:active{transform:scale(0.98)}
+.mc-top{display:flex;align-items:baseline;gap:6px}
+.mc-nm{flex:1;min-width:0;font-size:11.5px;font-weight:650;letter-spacing:-0.2px;color:var(--ink2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mc-ago{font-size:10px;font-weight:650;color:var(--ink4);white-space:nowrap}
+.mc-val{font-size:23px;font-weight:800;letter-spacing:-0.9px;line-height:1.05;margin-top:6px}
+.mc-val span{font-size:10.5px;font-weight:700;letter-spacing:-0.2px;color:var(--ink3);margin-left:3px}
+.mc-ch{margin:8px 0 7px}
+.mc-ft{display:flex;align-items:baseline;justify-content:space-between;gap:6px;
+  font-size:10px;font-weight:750;letter-spacing:-0.1px}
+.mc-ref{color:var(--ink4);font-weight:600;white-space:nowrap}
 
 /* ── карта систем организма ──────────────────────────────────────
    Плоский список показателей не отвечает на главный вопрос — что вообще

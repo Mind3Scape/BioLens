@@ -112,6 +112,78 @@ export function sparkline(series, { w = 76, h = 26, color } = {}) {
   </svg>`;
 }
 
+/* ── линия, окрашенная состоянием ────────────────────────────────
+   Взято у Ornament и переложено на наш язык цвета. Отрезок горит тем цветом,
+   каким был замер на ЕГО КОНЦЕ: жёлтым там, где значение подошло к границе,
+   красным — где вышло, зелёным — где вернулось.
+
+   Это не оценка тренда «всё падает» (её мы себе не позволяем), а карта
+   состояния во времени: видно не только где человек сейчас, но и каким путём
+   он сюда пришёл. Коридор за спиной остаётся серым: если залить его зелёным,
+   он начнёт кричать «всё хорошо» через весь график — в том числе там, где
+   линия идёт выше него.
+
+   По горизонтали — ВРЕМЯ, а не номер замера: три анализа за месяц и один
+   трёхлетней давности не имеют права выглядеть ровной лесенкой. */
+export function statusLine(series, { w = 108, h = 42, fluid = false } = {}) {
+  const pts = series.filter(p => isFinite(p.value) && p.date);
+  if (!pts.length) return '';
+  const padX = 4, padY = 6;
+  if (pts.length === 1) {
+    return `<svg width="${fluid ? '100%' : w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">
+      <circle cx="${w / 2}" cy="${h / 2}" r="3.4" fill="${toneDot(pts[0].status)}"/></svg>`;
+  }
+
+  const times = pts.map(p => +new Date(p.date));
+  const tMin = Math.min(...times), tMax = Math.max(...times);
+  const tSpan = (tMax - tMin) || 1;
+
+  /* Границы коридора входят в масштаб: иначе полоса нормы уезжает за край,
+     и линия висит непонятно относительно чего. */
+  const vals = pts.map(p => p.value);
+  const lows = pts.map(p => p.refLow).filter(v => v != null);
+  const highs = pts.map(p => p.refHigh).filter(v => v != null);
+  let min = Math.min(...vals, ...lows), max = Math.max(...vals, ...highs);
+  const span = (max - min) || Math.abs(max) || 1;
+  min -= span * 0.1; max += span * 0.1;
+
+  const X = (tt) => padX + ((tt - tMin) / tSpan) * (w - padX * 2);
+  const Y = (v) => h - padY - ((v - min) / (max - min)) * (h - padY * 2);
+  const xs = times.map(X), ys = vals.map(Y);
+
+  /* Коридор ступеньками: у каждого бланка свои границы, и делать вид,
+     что норма всю жизнь была одна, нечестно. */
+  let band = '';
+  for (let i = 0; i < pts.length; i++) {
+    const lo = pts[i].refLow, hi = pts[i].refHigh;
+    if (lo == null && hi == null) continue;
+    const x0 = i === 0 ? 0 : (xs[i - 1] + xs[i]) / 2;
+    const x1 = i === pts.length - 1 ? w : (xs[i] + xs[i + 1]) / 2;
+    const yTop = Y(hi != null ? hi : max), yBot = Y(lo != null ? lo : min);
+    band += `<rect x="${x0.toFixed(1)}" y="${yTop.toFixed(1)}" width="${Math.max(0, x1 - x0).toFixed(1)}" height="${Math.max(1, yBot - yTop).toFixed(1)}" fill="var(--band)"/>`;
+  }
+
+  const m = tangents(xs, ys);
+  const line = pts.slice(1).map((_, i) =>
+    `<path d="${segment(xs, ys, m, i)}" fill="none" stroke="${toneDot(pts[i + 1].status)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`
+  ).join('');
+
+  const lx = xs[xs.length - 1].toFixed(1), ly = ys[ys.length - 1].toFixed(1);
+  return `<svg width="${fluid ? '100%' : w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">${band}${line}
+    <circle cx="${lx}" cy="${ly}" r="3.1" fill="${toneDot(pts[pts.length - 1].status)}" stroke="var(--surface)" stroke-width="1.6"/></svg>`;
+}
+
+/* ── точечная полоса ─────────────────────────────────────────────
+   Из макета: доля дня набирается точками, а не заливается сплошной краской,
+   и отдельная засечка показывает, где ты стоишь. Двадцать точек читаются
+   как «сколько осталось», чего кольцо в 24 пикселя не умеет. */
+export function dotBar(pct, { n = 20 } = {}) {
+  const p = Math.max(0, Math.min(1, pct || 0));
+  const on = Math.round(p * n);
+  const dots = Array.from({ length: n }, (_, i) => `<i${i < on ? ' class="on"' : ''}></i>`).join('');
+  return `<div class="dbar">${dots}<b style="left:${(p * 100).toFixed(1)}%"></b></div>`;
+}
+
 /* Плавная линия без выдумывания.
    Монотонная кубическая интерполяция (Фрич — Карлсон): кривая проходит через
    все замеры и НИКОГДА не выходит за соседние значения — то есть не рисует
