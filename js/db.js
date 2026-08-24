@@ -167,8 +167,9 @@ const defaults = {
   modelMigrated: 0,
 };
 
-/* модели, которые стояли по умолчанию в прошлых сборках */
-const WAS_DEFAULT = ['', 'google/gemini-2.5-flash'];
+/* Номер раскатки модели. Меняется, когда всех надо пересадить заново:
+   1 — переезд с прежнего дефолта, 2 — общая пересадка на Ox Alpha. */
+const MODEL_ROLLOUT = 2;
 
 export function settings() {
   try {
@@ -178,13 +179,14 @@ export function settings() {
     if (saved.theme === 'auto' && !saved.themeMigrated) {
       saved.theme = 'light'; saved.themeMigrated = 1; touched = true;
     }
-    /* Разовый переезд на бесплатную модель с окном в миллион токенов.
-       Переселяем только тех, у кого стояла модель по умолчанию: если человек
-       выбрал модель руками, его выбор чужой и трогать его нельзя. */
-    if (!saved.modelMigrated) {
-      if (WAS_DEFAULT.includes(saved.modelVision || '')) saved.modelVision = defaults.modelVision;
-      if (WAS_DEFAULT.includes(saved.modelChat || '')) saved.modelChat = defaults.modelChat;
-      saved.modelMigrated = 1; touched = true;
+    /* Переезд на бесплатную модель с окном в миллион токенов — всем сразу:
+       на ней сейчас обкатывается разбор анализов, и все должны быть на одной.
+       Срабатывает ОДИН раз: кто после этого выберет модель руками, останется
+       со своим выбором — пересадит только следующая раскатка. */
+    if (saved.modelMigrated !== MODEL_ROLLOUT) {
+      saved.modelVision = defaults.modelVision;
+      saved.modelChat = defaults.modelChat;
+      saved.modelMigrated = MODEL_ROLLOUT; touched = true;
     }
     if (!saved.modelVision) { saved.modelVision = defaults.modelVision; touched = true; }
     if (!saved.modelChat) { saved.modelChat = defaults.modelChat; touched = true; }

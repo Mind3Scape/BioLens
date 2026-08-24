@@ -1009,8 +1009,11 @@ async function importAll() {
     const [ck, cv, cc] = await Promise.all([TG.cloudGet('apiKey'), TG.cloudGet('modelVision'), TG.cloudGet('modelChat')]);
     const patch = {};
     if (!s0.apiKey && ck) patch.apiKey = ck;
-    if (!s0.modelVision && cv) patch.modelVision = cv;
-    if (!s0.modelChat && cc) patch.modelChat = cc;
+    /* Модель теперь назначает приложение, а не облако: в облаке мог остаться
+       прежний выбор с другого устройства, и он всплыл бы обратно. Наоборот —
+       кладём туда ту, на которой человек работает сейчас. */
+    if (cv !== s0.modelVision) TG.cloudSet('modelVision', s0.modelVision);
+    if (cc !== s0.modelChat) TG.cloudSet('modelChat', s0.modelChat);
     if (Object.keys(patch).length) { db.saveSettings(patch); }
   }
   app.models = db.cachedModels();

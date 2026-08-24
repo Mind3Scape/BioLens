@@ -1,7 +1,7 @@
 /* Оболочка кэшируется, данные — никогда: они и так лежат в IndexedDB.
    Запросы к openrouter.ai проходят мимо кэша всегда. */
 
-const CACHE = 'biolens-v23';
+const CACHE = 'biolens-v25';
 const SHELL = [
   './', './index.html', './css/app.css',
   './js/app.js', './js/db.js', './js/store.js', './js/views.js',
@@ -9,8 +9,21 @@ const SHELL = [
   './manifest.webmanifest',
 ];
 
+/* Файлы новой версии берём СТРОГО из сети.
+   `addAll` спрашивает их у обычного кэша браузера — и новая версия приезжала
+   со старыми файлами внутри: номер сборки менялся, код оставался прежним.
+   Если хоть один файл не скачался, установка падает целиком: половина новой
+   сборки хуже, чем честно оставшаяся старая. */
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil((async () => {
+    const c = await caches.open(CACHE);
+    await Promise.all(SHELL.map(async (url) => {
+      const r = await fetch(new Request(url, { cache: 'reload' }));
+      if (!r.ok) throw new Error('не скачался ' + url);
+      await c.put(url, r);
+    }));
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (e) => {
