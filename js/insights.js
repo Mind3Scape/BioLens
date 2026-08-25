@@ -122,7 +122,7 @@ export function notices(app = {}) {
   const queue = S.state.docs.filter(d => ['queued', 'reading'].includes(d.status)).length;
   if (queue) {
     out.push({
-      id: 'queue', icon: 'hourglass', tone: 'slate',
+      id: 'queue', icon: 'hourglass', tone: 'slate', kind: 'разбор',
       title: `Разбираю ещё ${queue}`,
       sub: S.state.queue.total ? `${S.state.queue.done} из ${S.state.queue.total} · можно закрыть приложение` : 'сейчас начну',
       act: 'inbox', data: {},
@@ -133,7 +133,7 @@ export function notices(app = {}) {
      и ключи, и место ему здесь. */
   if (app.aiSummaryError) {
     out.push({
-      id: 'ai', icon: 'warning', tone: 'edge',
+      id: 'ai', icon: 'warning', tone: 'edge', kind: 'связь с ИИ',
       title: humanAiError(app.aiSummaryError),
       sub: 'разбор документов и ответы пока не работают',
       act: 'settings', data: {},
@@ -144,7 +144,7 @@ export function notices(app = {}) {
      приложение вообще может сказать. Первым в списке и красным. */
   for (const c of PP.conflictingMeds(MED.state.meds.filter(m => ['active', 'ask'].includes(MED.statusOf(m, today))))) {
     out.unshift({
-      id: 'allergy-' + c.med.id, icon: 'warning', tone: 'out',
+      id: 'allergy-' + c.med.id, icon: 'warning', tone: 'out', kind: 'аллергия',
       title: `${c.med.name} и твоя аллергия на ${c.hits[0].allergy.name}`,
       sub: 'переспроси врача — приложение ничего не отменяет само',
       act: 'med', data: { id: c.med.id },
@@ -155,7 +155,7 @@ export function notices(app = {}) {
      без аллергий сверять назначения не с чем. */
   if (PP.isEmpty() && MED.state.meds.length) {
     out.push({
-      id: 'passport', icon: 'shield', tone: 'slate',
+      id: 'passport', icon: 'shield', tone: 'slate', kind: 'паспорт здоровья',
       title: 'Аллергии не записаны',
       sub: 'первый вопрос на приёме — и я смогу сверять с ним назначения',
       act: 'go', data: { r: 'passport' },
@@ -165,8 +165,8 @@ export function notices(app = {}) {
   const check = MED.unconfirmed();
   if (check.length) {
     out.push({
-      id: 'rx-check', icon: 'pill', tone: 'edge',
-      title: check.length === 1 ? `Сверь назначение: ${check[0].name}` : `${check.length} назначения не проверены`,
+      id: 'rx-check', icon: 'pill', tone: 'edge', kind: 'назначения',
+      title: check.length === 1 ? `Сверь назначение: ${check[0].name}` : `${check.length} ${plural(check.length, 'назначение не проверено', 'назначения не проверены', 'назначений не проверены')}`,
       sub: 'дозу и время я прочитал с фотографии — ошибка тут опаснее пропуска',
       act: check.length === 1 ? 'med' : 'go',
       data: check.length === 1 ? { id: check[0].id } : { r: 'meds' },
@@ -175,7 +175,7 @@ export function notices(app = {}) {
 
   for (const m of MED.askMeds(today)) {
     out.push({
-      id: 'ask-' + m.id, icon: 'clock', tone: 'edge',
+      id: 'ask-' + m.id, icon: 'clock', tone: 'edge', kind: 'приём',
       title: `Ты ещё принимаешь ${m.name}?`,
       sub: `назначено ${m.docDate ? S.ruDate(m.docDate) : 'давно'}, срок не указан — в расписание не ставлю`,
       act: 'med', data: { id: m.id },
@@ -187,7 +187,7 @@ export function notices(app = {}) {
     || (d.status === 'ready' && d.pageErrors?.length));
   if (attention.length) {
     out.push({
-      id: 'docs', icon: 'file', tone: 'edge',
+      id: 'docs', icon: 'file', tone: 'edge', kind: 'архив',
       title: attention.length === 1 ? 'Документ ждёт тебя' : `${attention.length} документов ждут тебя`,
       sub: 'нет даты, не прочитан или похож на дубль',
       act: 'inbox', data: {},
@@ -197,7 +197,7 @@ export function notices(app = {}) {
   const doubts = S.state.meas.filter(m => !m.confirmed).length;
   if (doubts) {
     out.push({
-      id: 'doubts', icon: 'eye', tone: 'slate',
+      id: 'doubts', icon: 'eye', tone: 'slate', kind: 'проверка чисел',
       title: `${doubts} ${doubts === 1 ? 'число прочитано' : 'чисел прочитано'} неуверенно`,
       sub: 'открой документ и сверь с оригиналом — это десять секунд',
       act: 'inbox', data: {},
@@ -207,8 +207,8 @@ export function notices(app = {}) {
   const due = S.dueList();
   if (due.length) {
     out.push({
-      id: 'due', icon: 'clock', tone: 'slate',
-      title: due.length === 1 ? `${due[0].title} — пора пересдать` : `${due.length} показателей пора пересдать`,
+      id: 'due', icon: 'clock', tone: 'slate', kind: 'пересдать',
+      title: due.length === 1 ? `${due[0].title} — пора пересдать` : `${due.length} ${plural(due.length, 'показатель', 'показателя', 'показателей')} пора пересдать`,
       sub: `${due[0].title} последний раз ${S.ruShort(due[0].last.date)}`,
       act: 'due', data: {},
     });

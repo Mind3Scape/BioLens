@@ -314,14 +314,19 @@ export function noticesView(app) {
     return html + emptyBlock('bell', 'Ничего не ждёт',
       'Здесь появится то, что требует твоего ответа: непрочитанные бланки, назначения без подтверждения, кончившиеся деньги на счету модели.');
   }
-  html += `<div class="grp">${list.map(n => {
+  /* Каждое дело — отдельная карточка, как в макете: в общем списке строки
+     сливались в стену, и глаз не мог отделить одно дело от другого. Сверху
+     карточки — к какому виду относится и когда появилось. */
+  html += list.map(n => {
     const attrs = Object.entries(n.data || {}).map(([k, v]) => ` data-${k}="${esc(v)}"`).join('');
-    return `<div class="gi ntc" data-act="${esc(n.act)}"${attrs}>
-      <span class="nico ${esc(n.tone)}">${icon(n.icon, 'ico s')}</span>
-      <div class="t"><div class="nm" style="font-size:14px">${esc(n.title)}</div>
-        <div class="sm">${esc(n.sub)}</div></div>
-      ${chevron()}</div>`;
-  }).join('')}</div>`;
+    return `<button class="card ncard" data-act="${esc(n.act)}"${attrs}>
+      <div class="nctop"><span class="nico ${esc(n.tone)}">${icon(n.icon, 'ico s')}</span>
+        <span class="nckind">${esc(n.kind || 'дело')}</span>
+        <span class="grow"></span>${chevron()}</div>
+      <div class="ncttl">${esc(n.title)}</div>
+      <div class="ncsub">${esc(n.sub)}</div>
+    </button>`;
+  }).join('');
   html += `<div class="disc">Приложение живёт внутри Телеграма и не шлёт push-уведомлений. Всё, что важно, ждёт здесь.</div>`;
   return html;
 }
