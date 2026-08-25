@@ -2408,63 +2408,93 @@ export function passportView(app) {
 
 /* ══ ЗНАКОМСТВО ══════════════════════════════════════════════ */
 
+/* ══ ОНБОРДИНГ ═══════════════════════════════════════════════
+   По макету: ОДИН вопрос на экран, полоса шагов сверху, крупный заголовок,
+   объяснение «зачем» серым и одна кнопка внизу. Раньше три поля профиля
+   стояли в один ряд на первом же экране — человек видел форму, а форма
+   спрашивает, тогда как разговор объясняет.
+
+   Порядок наш, не макетный: сначала то, без чего приложение соврёт (пол —
+   от него зависят границы половины показателей), потом то, что уточняет,
+   и только в конце ключ. Спрашивать ключ раньше, чем человек понял, зачем
+   он тут, — верный способ потерять его на первом экране. */
+
+const OB_STEPS = ['sex', 'age', 'body', 'key', 'first'];
+
+function obHead(idx) {
+  const n = OB_STEPS.length;
+  return `<div class="obtop">
+    ${idx > 0 ? `<button class="rnd" data-act="ob-back">${backIcon()}</button>` : '<div class="spacer" style="width:38px"></div>'}
+    <div class="obbar">${Array.from({ length: n }, (_, i) => `<i class="${i <= idx ? 'on' : ''}"></i>`).join('')}</div>
+    <div class="obnum">${idx + 1}</div>
+  </div>`;
+}
+const obTitle = (t, sub) => `<div class="obh"><h1>${esc(t)}</h1>${sub ? `<p>${sub}</p>` : ''}</div>`;
+const obPick = (act, v, on, title, sub) => `<button class="opick ${on ? 'on' : ''}" data-act="${act}" data-v="${esc(v)}">
+  <div class="grow"><div class="ot">${esc(title)}</div>${sub ? `<div class="os">${esc(sub)}</div>` : ''}</div>
+  <span class="ock">${on ? icon('check', 'ico s') : ''}</span></button>`;
+
 export function onboarding(app) {
   const s = db.settings();
-  const step = app.obStep || 1;
+  const idx = Math.max(0, Math.min(OB_STEPS.length - 1, (app.obStep || 1) - 1));
+  const step = OB_STEPS[idx];
+  let html = obHead(idx);
 
-  if (step === 1) {
-    const who = tgUserName();
-    return `<div class="head"><div style="color:var(--ink)">${logoMark(34)}</div>
-      <div class="grow"><h1>${who ? esc(who) + ', это BioLens' : 'BioLens'}</h1><div class="sub">шаг 1 из 3</div></div></div>
-    <div class="card"><div class="row">${icon('sparkle', 'ico s')}
-      <div class="grow sm" style="color:var(--ink2);line-height:1.55">Кидай сюда скриншоты анализов — я сам прочитаю дату, лабораторию и показатели и сложу их <b style="color:var(--ink)">в линии по годам</b>.</div></div></div>
-    <div class="card">
-      <label class="lab">Пол — нормы в анализах разные</label>
-      <div class="segs" style="margin-bottom:14px">
-        <button class="seg ${s.sexSet && s.sex !== 'f' ? 'on' : ''}" data-act="sex" data-v="m">Мужской</button>
-        <button class="seg ${s.sexSet && s.sex === 'f' ? 'on' : ''}" data-act="sex" data-v="f">Женский</button>
-      </div>
-      <div class="row" style="gap:10px">
-        <div class="grow"><label class="lab">Год рождения</label><input type="number" id="birthYear" value="${s.birthYear}"></div>
-        <div class="grow"><label class="lab">Рост, см</label><input type="number" id="heightCm" value="${s.heightCm}"></div>
-        <div class="grow"><label class="lab">Вес, кг</label><input type="number" id="weightKg" value="${s.weightKg}"></div>
-      </div>
-    </div>
-    <button class="btn" data-act="ob-next" ${s.sexSet ? '' : 'disabled'}>Дальше</button>
-    ${s.sexSet ? '' : '<div class="sm" style="text-align:center;margin-top:9px">Выбери пол — от него зависят границы нормы у половины показателей</div>'}
-    <div class="disc">Эти данные нужны только для границ нормы и остаются на устройстве.</div>`;
+  if (step === 'sex') {
+    html += obTitle('Укажите ваш пол', 'От пола зависят границы нормы почти у половины показателей. Без него я подставлю чужие и буду врать в обе стороны.')
+      + obPick('sex', 'm', s.sexSet && s.sex !== 'f', 'Мужской')
+      + obPick('sex', 'f', s.sexSet && s.sex === 'f', 'Женский')
+      + `<div class="obfoot"><button class="btn" data-act="ob-next" ${s.sexSet ? '' : 'disabled'}>Продолжить</button></div>`;
+    return html;
   }
 
-  if (step === 2) {
+  if (step === 'age') {
+    const year = s.birthYear || 1990;
+    html += obTitle('Сколько вам лет?', 'Возраст меняет норму у щитовидки, сахара и почек. Это единственное, для чего он мне нужен.')
+      + `<div class="obbig"><input type="number" id="birthYear" value="${year}" inputmode="numeric"><span>год рождения</span></div>`
+      + `<div class="obfoot"><button class="btn" data-act="ob-next">Продолжить</button></div>`;
+    return html;
+  }
+
+  if (step === 'body') {
+    html += obTitle('Рост и вес', 'Нужны только для дневной рамки калорий на вкладке «Еда». На границы анализов они не влияют.')
+      + `<div class="card"><div class="row" style="gap:12px">
+          <div class="grow"><label class="lab">Рост, см</label><input type="number" id="heightCm" value="${s.heightCm}" inputmode="numeric"></div>
+          <div class="grow"><label class="lab">Вес, кг</label><input type="number" id="weightKg" value="${s.weightKg}" inputmode="numeric"></div>
+        </div></div>`
+      + `<div class="obfoot"><button class="btn" data-act="ob-next">Продолжить</button>
+         <button class="btn ghost" data-act="ob-next" style="margin-top:9px">Сделаю это позже</button></div>`;
+    return html;
+  }
+
+  if (step === 'key') {
     const models = app.models || db.cachedModels() || [];
-    const vision = models.filter(m => (m.inputs || []).includes('image'));
-    return `<div class="head"><div class="grow"><h1>Ключ и модель</h1><div class="sub">шаг 2 из 3</div></div></div>
-    <div class="card"><div class="sm" style="font-size:14px;line-height:1.55;color:var(--ink2)">
-      Разбор снимков делает <b style="color:var(--ink)">модель по твоему выбору</b> через OpenRouter. Ключ берётся на openrouter.ai → Keys и хранится только здесь.</div></div>
-    <div class="card">
-      <label class="lab">Ключ OpenRouter</label>
-      <input type="password" id="apiKey" value="${esc(s.apiKey)}" placeholder="sk-or-v1-…" autocomplete="off">
-      <div class="row" style="margin-top:10px"><button class="mini" data-act="check-key">Проверить и сохранить</button>
-        <div class="grow sm">${app.keyState ? esc(app.keyState) : ''}</div></div>
-    </div>
-    ${vision.length ? `<div class="card list" style="max-height:320px;overflow:auto">
-      ${vision.slice(0, 14).map(m => `<div class="it" data-act="pick-model" data-id="${esc(m.id)}">
-        ${s.modelVision === m.id ? icon('check', 'ico s') : `<span class="dot unknown"></span>`}
-        <div class="grow"><div class="nm" style="font-size:14px">${esc(m.name)}</div>
-          <div class="sm">${m.variablePrice || m.promptPrice == null ? 'цена зависит от модели' : m.free ? 'бесплатно' : `$${(m.promptPrice * 1e6).toFixed(2)}/млн вход`}</div></div>
-      </div>`).join('')}
-    </div>` : `<div class="card"><button class="mini" data-act="refresh-models">${app.modelsLoading ? 'Загружаю модели…' : 'Загрузить список моделей'}</button></div>`}
-    <button class="btn" data-act="ob-next" ${s.apiKey && s.modelVision ? '' : 'disabled'}>Дальше</button>
-    <button class="btn ghost" data-act="ob-skip" style="margin-top:9px">Пропустить пока</button>`;
+    const vision = models.filter(m => (m.inputs || []).includes('image')).slice(0, 6);
+    html += obTitle('Ключ OpenRouter', 'Бланк читает не приложение, а модель по твоему выбору. Ключ берётся на openrouter.ai → Keys, хранится только на этом устройстве и уходит напрямую в OpenRouter.')
+      + `<div class="card">
+          <input type="password" id="apiKey" value="${esc(s.apiKey)}" placeholder="sk-or-v1-…" autocomplete="off">
+          <div class="row" style="margin-top:10px"><button class="mini" data-act="check-key">Проверить и сохранить</button>
+            <div class="grow sm">${app.keyState ? esc(app.keyState) : ''}</div></div>
+        </div>`
+      + (s.apiKey && vision.length ? `<div class="cap">Модель для снимков</div><div class="card list">
+          ${vision.map(m => `<div class="it" data-act="pick-model" data-id="${esc(m.id)}">
+            ${s.modelVision === m.id ? icon('check', 'ico s') : `<span class="dot unknown"></span>`}
+            <div class="grow"><div class="nm" style="font-size:14px">${esc(m.name)}</div>
+              <div class="sm">${m.free ? 'бесплатно' : m.promptPrice == null ? 'цена зависит от модели' : `$${(m.promptPrice * 1e6).toFixed(2)}/млн вход`}</div></div>
+          </div>`).join('')}</div>` : '')
+      + `<div class="obfoot"><button class="btn" data-act="ob-next" ${s.apiKey ? '' : 'disabled'}>Продолжить</button>
+         <button class="btn ghost" data-act="ob-next" style="margin-top:9px">Пропустить пока</button></div>`;
+    return html;
   }
 
-  return `<div class="head"><div class="grow"><h1>Начнём с пяти</h1><div class="sub">шаг 3 из 3</div></div></div>
-  <div class="card"><div class="sm" style="font-size:14px;line-height:1.55;color:var(--ink2)">
-    Не разбирай весь архив — <b style="color:var(--ink)">выбери пять последних</b> анализов. Я покажу, что получается, за минуту. Остальные годы добавишь, когда захочешь.</div></div>
-  <button class="btn" data-act="add">${icon('camera', 'ico s')}Выбрать из галереи</button>
-  <button class="btn ghost" data-act="scan" style="margin-top:10px">${icon('camera', 'ico s')}Снять бланк камерой</button>
-  <button class="btn ghost" data-act="demo-fill" style="margin-top:10px">Посмотреть на примере</button>
-  <button class="btn ghost" data-act="ob-done" style="margin-top:10px">Позже</button>`;
+  html += obTitle('Начнём с пяти', 'Не разбирай весь архив сразу — выбери <b>пять последних</b> анализов. Через минуту будет видно, что получается. Остальные годы добавишь, когда захочешь.')
+    + `<div class="obfoot">
+        <button class="btn" data-act="add">${icon('camera', 'ico s')}Выбрать из галереи</button>
+        <button class="btn ghost" data-act="scan" style="margin-top:9px">${icon('camera', 'ico s')}Снять бланк камерой</button>
+        <button class="btn ghost" data-act="demo-fill" style="margin-top:9px">Посмотреть на примере</button>
+        <button class="btn ghost" data-act="ob-done" style="margin-top:9px">Позже</button>
+      </div>`;
+  return html;
 }
 
 /* ══ ТАБ-БАР ═════════════════════════════════════════════════ */

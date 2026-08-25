@@ -565,22 +565,28 @@ async function handleAction(el) {
     }
 
     /* знакомство */
+    case 'ob-back': app.obStep = Math.max(1, (app.obStep || 1) - 1); render(); break;
     case 'ob-next': {
-      if (app.obStep === 1) {
-        db.saveSettings({
-          birthYear: +$('#birthYear')?.value || 1990,
-          heightCm: +$('#heightCm')?.value || 175,
-          weightKg: +$('#weightKg')?.value || 75,
-        });
-        app.obStep = 2;
-        if (!app.models) loadModels();
-      } else if (app.obStep === 2) {
-        app.obStep = 3;
+      /* Что успел ввести человек на этом шаге — сохраняем перед уходом:
+         поля живут в DOM и исчезнут вместе с перерисовкой. */
+      const y = +$('#birthYear')?.value, h = +$('#heightCm')?.value, w = +$('#weightKg')?.value;
+      const patch = {};
+      if (y) patch.birthYear = y;
+      if (h) patch.heightCm = h;
+      if (w) patch.weightKg = w;
+      if (Object.keys(patch).length) db.saveSettings(patch);
+
+      const stepNow = app.obStep || 1;
+      if (stepNow < 4) {
+        app.obStep = stepNow + 1;
+        if (app.obStep === 4 && !app.models) loadModels();
+      } else if (stepNow === 4) {
+        app.obStep = 5;
       }
       render();
       break;
     }
-    case 'ob-skip': app.obStep = 3; render(); break;
+    case 'ob-skip': app.obStep = 5; render(); break;
     case 'ob-done': db.saveSettings({ onboarded: true }); go('summary'); break;
   }
 }
