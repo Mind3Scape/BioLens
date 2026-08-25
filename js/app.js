@@ -6,7 +6,7 @@ import * as MED from './meds.js';
 import * as SYS from './systems.js';
 import * as PP from './passport.js';
 import * as V from './views.js';
-import { $, $$, esc, toast, sheet, confirmSheet } from './ui.js';
+import { $, $$, esc, toast, sheet, confirmSheet, wireCharts } from './ui.js';
 import { icon } from './icons.js';
 import { fetchModels, checkKey, summarize, askArchive, mealFeedback, chat, VOICE_RULES } from './openrouter.js';
 import { scan } from './scan.js';
@@ -78,7 +78,17 @@ function render() {
   else if (app.route === 'settings') html = V.settingsView(app);
   else if (app.route === 'models') html = V.modelsView(app);
 
+  /* Пометка «экран сменился» вешается только при смене маршрута: если играть
+     анимацию на каждой перерисовке, экран будет дёргаться от любой отметки
+     принятой таблетки. */
+  const routeChanged = view.dataset.route !== app.route;
   view.innerHTML = html;
+  if (routeChanged) {
+    view.dataset.route = app.route;
+    view.classList.remove('swap');
+    void view.offsetWidth;          // перезапуск анимации
+    view.classList.add('swap');
+  }
   /* Подсвечиваем вкладку только там, где экран действительно ей принадлежит.
      Хроника, документ и «для врача» ничьи — гореть «Здоровью», пока ты не там,
      значит врать про своё же положение. */
@@ -98,6 +108,9 @@ function render() {
   bar.classList.toggle('on', s.onboarded && view.scrollTop > 46);
   TG.setBackButton(app.stack.length > 0);
   hydrateImages(view);
+  /* Графики оживают после каждой перерисовки: узлы новые, обработчики на них
+     ещё не висят. Сама функция помечает уже оживлённые и не вешает дважды. */
+  wireCharts(view);
 
   /* Выбранный фильтр может стоять за краем ленты — с шестью фильтрами в Хронике
      человек нажимал «Назначения» и терял из виду, что он вообще выбран. */

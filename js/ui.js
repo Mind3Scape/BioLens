@@ -3,6 +3,7 @@
 
 import { icon } from './icons.js';
 import { trim, ruDate } from './store.js';
+import { haptic } from './telegram.js';
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -385,9 +386,107 @@ export function chart(series, { w = 340, h = 210, unit = '' } = {}) {
   const axis = `<line x1="${padL}" y1="${(padT + innerH).toFixed(1)}" x2="${(w - padR).toFixed(1)}" y2="${(padT + innerH).toFixed(1)}" stroke="var(--hair)" stroke-width="1"/>`
     + xs.map(x => `<line x1="${x.toFixed(1)}" y1="${(padT + innerH).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(padT + innerH + 4).toFixed(1)}" stroke="var(--ink4)" stroke-width="1" opacity="0.45"/>`).join('');
 
-  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block" font-family="-apple-system,sans-serif">
-    ${defs.length ? `<defs>${defs.join('')}</defs>` : ''}${band}${edges}${bandLabel}${axis}${path}${gapMark}${refTags}${dots}${labels}
+  /* Заливка под линией — приём Ornament, у нас с другим смыслом. Она уходит
+     в прозрачность книзу и красится состоянием ПОСЛЕДНЕГО замера: график
+     получает вес и настроение, но цвет остаётся честным — он про «где ты
+     сейчас», а не украшение. Заливка есть только там, где линия сплошная:
+     под пунктиром разрыва закрашивать нечего. */
+  let area = '';
+  if (pts.length > 1) {
+    const gid = 'ar' + (++GRAD_SEQ);
+    const tone = pts[pts.length - 1].status;
+    const col = tone === 'ok' ? 'var(--ok-dot)' : toneDot(tone);
+    const solid = [];
+    let run = [0];
+    for (let i = 1; i < pts.length; i++) {
+      if ((times[i] - times[i - 1]) / 86400000 > GAP_DAYS) { solid.push(run); run = [i]; }
+      else run.push(i);
+    }
+    solid.push(run);
+    const bottom = (padT + innerH).toFixed(1);
+    for (const seg of solid) {
+      if (seg.length < 2) continue;
+      let d = `M${xs[seg[0]].toFixed(1)},${bottom} L${xs[seg[0]].toFixed(1)},${ys[seg[0]].toFixed(1)}`;
+      for (let k = 1; k < seg.length; k++) {
+        const i = seg[k];
+        d += ' ' + segment(xs, ys, m, i - 1).replace(/^M[^C]*/, '');
+      }
+      d += ` L${xs[seg[seg.length - 1]].toFixed(1)},${bottom} Z`;
+      area += `<path d="${d}" fill="url(#${gid})"/>`;
+    }
+    defs.push(`<linearGradient id="${gid}" x1="0" y1="${padT}" x2="0" y2="${bottom}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="${col}" stop-opacity="0.20"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient>`);
+  }
+
+  /* Скраббер: ведёшь пальцем — линия и число идут за пальцем. У Ornament
+     выбранная точка статична, здесь график можно ПРОЩУПАТЬ, и каждый замер
+     называет свою дату сам. Данные точек едут в атрибуте, чтобы обработчик
+     не пересчитывал геометрию и не трогал перерисовку экрана. */
+  const ptData = pts.map((p, i) => ({ x: +xs[i].toFixed(1), y: +ys[i].toFixed(1), v: trim(p.value), d: ruDate(p.date), c: toneVar(p.status), f: toneDot(p.status) }));
+  const scrub = `<g class="scrub" style="display:none">
+      <line class="sc-l" y1="${padT}" y2="${(padT + innerH).toFixed(1)}" stroke="var(--ink4)" stroke-width="1.2" stroke-dasharray="3 3"/>
+      <circle class="sc-d" r="6" fill="none" stroke="var(--surface)" stroke-width="2.5"/>
+      <rect class="sc-b" rx="9" height="18" fill="var(--surface)" stroke="var(--hair2)" stroke-width="1"/>
+      <text class="sc-t" font-size="11.5" font-weight="800" text-anchor="middle"></text>
+    </g>
+    <rect class="sc-hit" x="${padL}" y="${padT}" width="${innerW}" height="${innerH}" fill="transparent" style="touch-action:pan-y"/>`;
+
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block" font-family="-apple-system,sans-serif"
+      data-pts='${JSON.stringify(ptData)}' data-unit="${esc(unit)}">
+    ${defs.length ? `<defs>${defs.join('')}</defs>` : ''}${band}${edges}${bandLabel}${axis}${area}${path}${gapMark}${refTags}${dots}${labels}${scrub}
   </svg>`;
+}
+
+/* Оживляем графики после перерисовки экрана.
+   Обработчик двигает несколько узлов напрямую и НЕ дёргает render(): палец
+   идёт по графику десятки раз в секунду, а перерисовка всего экрана на каждое
+   движение — это и подвисание, и потерянная позиция прокрутки. */
+export function wireCharts(root) {
+  root.querySelectorAll('svg[data-pts]').forEach(svg => {
+    if (svg.__wired) return;
+    svg.__wired = true;
+    let pts;
+    try { pts = JSON.parse(svg.getAttribute('data-pts')); } catch { return; }
+    if (!pts || pts.length < 2) return;
+
+    const unit = svg.getAttribute('data-unit') || '';
+    const g = svg.querySelector('.scrub'), hit = svg.querySelector('.sc-hit');
+    const line = svg.querySelector('.sc-l'), dot = svg.querySelector('.sc-d');
+    const bg = svg.querySelector('.sc-b'), tx = svg.querySelector('.sc-t');
+    if (!g || !hit) return;
+    const vb = svg.viewBox.baseVal;
+    let lastIdx = -1;
+
+    const show = (clientX) => {
+      const r = svg.getBoundingClientRect();
+      // из экранных пикселей в координаты viewBox — иначе всё едет на любом размере
+      const x = ((clientX - r.left) / r.width) * vb.width;
+      let best = 0, bd = Infinity;
+      pts.forEach((p, i) => { const d = Math.abs(p.x - x); if (d < bd) { bd = d; best = i; } });
+      /* Короткий отклик ровно на переходе с замера на замер: палец чувствует
+         каждую точку, как насечку на регуляторе. На каждое движение отклик
+         давать нельзя — получится непрерывная вибрация. */
+      if (best !== lastIdx) { lastIdx = best; haptic('light'); }
+      const p = pts[best];
+      line.setAttribute('x1', p.x); line.setAttribute('x2', p.x);
+      dot.setAttribute('cx', p.x); dot.setAttribute('cy', p.y); dot.setAttribute('fill', p.f);
+      const label = `${p.v}${unit ? ' ' + unit : ''} · ${p.d}`;
+      tx.textContent = label;
+      const bw = label.length * 5.6 + 16;
+      const bx = Math.min(vb.width - 8 - bw / 2, Math.max(8 + bw / 2, p.x));
+      const by = Math.max(16, p.y - 20);
+      bg.setAttribute('x', bx - bw / 2); bg.setAttribute('y', by - 13); bg.setAttribute('width', bw);
+      tx.setAttribute('x', bx); tx.setAttribute('y', by); tx.setAttribute('fill', p.c);
+      g.style.display = '';
+      svg.classList.add('scrubbing');
+    };
+    const hide = () => { g.style.display = 'none'; svg.classList.remove('scrubbing'); lastIdx = -1; };
+
+    hit.addEventListener('pointerdown', (e) => { hit.setPointerCapture?.(e.pointerId); show(e.clientX); });
+    hit.addEventListener('pointermove', (e) => { if (e.buttons || e.pointerType === 'touch') show(e.clientX); });
+    hit.addEventListener('pointerup', hide);
+    hit.addEventListener('pointercancel', hide);
+    hit.addEventListener('pointerleave', hide);
+  });
 }
 
 /* кольцо-прогресс для дня еды */

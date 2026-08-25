@@ -6,7 +6,7 @@ import * as db from './db.js';
 import * as MED from './meds.js';
 import { icon } from './icons.js';
 import { esc, sparkline, statusLine, dotBar, chart, statusDot, statusTag, statusWord, toneVar, inkTone, toneDot, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale, gauge, kcalRing } from './ui.js';
-import { markerTitle, markerGroup, MARKERS } from './markers.js';
+import { markerTitle, markerGroup, MARKERS, matchMarker } from './markers.js';
 import { info } from './reference.js';
 import { tgUserName, tgUser, inTelegram } from './telegram.js';
 import { tiles, notices } from './insights.js';
@@ -712,7 +712,44 @@ function humanRead({ key, last, prev, base, st, unit, series, showDiff, diff, ga
       <button class="mini" data-act="ask-marker" data-key="${esc(key)}" style="margin-top:12px">Спросить про этот показатель</button>
     </div>`;
   }
+
+  out += companions(key, ref);
   return out;
+}
+
+/* ── смотрят в паре ──────────────────────────────────────────────
+   Ни у Ornament, ни в макете этого нет: там показатель — одинокое число.
+   А врач читает его в компании: АЛТ без АСТ и билирубина говорит мало.
+   Справочник знает эти пары (`friends`), архив знает, что из них сдано.
+   Сложив одно с другим, экран отвечает на вопрос, который человек сам себе
+   не задаёт: «чего рядом не хватает, чтобы эта цифра что-то значила».
+
+   Сданное — тапается и открывается. Несданное — пунктирный чип: это не
+   назначение, а пробел, и он честно выглядит как пробел. */
+function companions(key, ref) {
+  if (!ref?.friends?.length) return '';
+  const list = S.markerList();
+  const rows = ref.friends.map(title => {
+    const hit = matchMarker(title);
+    const mine = hit ? list.find(m => m.key === hit.key) : null;
+    return { title, mine };
+  });
+  const have = rows.filter(r => r.mine);
+  const miss = rows.filter(r => !r.mine);
+  if (!rows.length) return '';
+
+  return `<div class="card">
+    <div class="cap" style="padding:0 0 9px">Смотрят в паре с этим</div>
+    <div class="cmps">
+      ${have.map(r => `<button class="cmp" data-act="marker" data-key="${esc(r.mine.key)}">
+        ${statusDot(r.mine.stale ? 'unknown' : r.mine.status)}
+        <span class="cn">${esc(r.mine.title)}</span>
+        <span class="cv" style="color:${inkTone(r.mine.stale ? 'unknown' : r.mine.status)}">${esc(S.trim(r.mine.last.value))}</span>
+      </button>`).join('')}
+      ${miss.map(r => `<span class="cmp off"><span class="cn">${esc(r.title)}</span><span class="cv">не сдавал</span></span>`).join('')}
+    </div>
+    ${miss.length ? `<div class="sm" style="margin-top:10px;line-height:1.5">${miss.length === 1 ? 'Его нет' : 'Их нет'} в архиве. Одно число из группы читается хуже, чем вся группа — но сдавать или нет, решает врач, а не приложение.</div>` : ''}
+  </div>`;
 }
 
 export function markerDetail(app) {

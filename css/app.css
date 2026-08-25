@@ -89,6 +89,13 @@ html.tg #view{padding-top:calc(16px + var(--tg-top, 0px));padding-bottom:calc(10
 html.tg .tabs{padding-bottom:calc(8px + var(--tg-bottom, 0px))}
 html.tg .toast{bottom:calc(92px + var(--tg-bottom, 0px))}
 #view{flex:1;overflow-y:auto;overflow-x:hidden;padding:10px 14px 104px;-webkit-overflow-scrolling:touch}
+/* Смена экрана — короткий подъём с проявлением. Раньше содержимое менялось
+   мгновенной подменой: глаз не успевал понять, что это ДРУГОЙ экран, а не
+   дёрнувшийся тот же. 180 мс достаточно, чтобы прочиталось движение, и мало,
+   чтобы приложение не казалось медленным. */
+#view.swap{animation:vswap .19s cubic-bezier(.22,1,.36,1) both}
+@keyframes vswap{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){#view.swap{animation:none}}
 #view::-webkit-scrollbar{width:0}
 
 /* ── типографика ── */
@@ -482,6 +489,21 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
 .dbar i.on{opacity:.9}
 .dbar b{position:absolute;bottom:0;width:2.5px;height:7px;border-radius:2px;background:currentColor}
 
+/* ── показатели, которые смотрят в паре ──
+   Сданное — живой чип со значением, несданное — пунктирный: пробел обязан
+   выглядеть как пробел, а не как ещё одна кнопка. */
+.cmps{display:flex;flex-wrap:wrap;gap:7px}
+.cmp{display:inline-flex;align-items:center;gap:7px;padding:8px 12px;border-radius:99px;
+  background:var(--field);border:1px solid transparent;font-family:inherit;cursor:pointer;
+  font-size:12.5px;letter-spacing:-0.2px;color:var(--ink)}
+.cmp:active{transform:scale(0.97)}
+.cmp .cn{font-weight:620}
+.cmp .cv{font-weight:800}
+.cmp.off{background:none;border:1px dashed var(--hair2);color:var(--ink4);cursor:default}
+.cmp.off .cn{font-weight:600}
+.cmp.off .cv{font-weight:600;font-size:11.5px}
+.cmp .dot{width:7px;height:7px;min-width:7px}
+
 /* ── объяснение человеческим языком ──
    Абзацы, а не строки списка: это связная речь про конкретного человека, и
    читается она сверху вниз. Кегль крупнее обычной подписи — сюда приходят
@@ -531,6 +553,11 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
 .ssb i{border-radius:99px;min-width:6px}
 .ssw{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;font-size:11.5px;font-weight:600;color:var(--ink3)}
 .ssw b{font-weight:800}
+
+/* Пока ведёшь пальцем по графику, статичная пилюля последнего значения
+   гаснет: две подписи с числами одновременно спорят за одно и то же место. */
+svg.scrubbing .pulse-dot{animation:none;opacity:0}
+.sc-hit{cursor:crosshair}
 
 /* ── живая точка и стрелки движения ──
    Пульс — transform на SVG-круге: дешёво и не трогает layout. Уважает
