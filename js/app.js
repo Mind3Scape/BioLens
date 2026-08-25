@@ -422,6 +422,17 @@ async function handleAction(el) {
     case 'ask-preset': sendQuestion(el.dataset.q); break;
     /* Вопрос про конкретный показатель прямо с его экрана: человек уже
        смотрит на число — не заставляем его пересказывать вопрос заново. */
+    /* Вопрос по бланку целиком — с его датой, лабораторией и распознанными
+       числами: человек уже смотрит на документ, пересказывать его не должен. */
+    case 'ask-doc': {
+      const doc = S.state.docs.find(d => d.id === el.dataset.id);
+      if (!doc) break;
+      const ms = S.state.meas.filter(m => m.docId === doc.id);
+      const body = ms.slice(0, 40).map(m => `${m.title}: ${S.trim(m.value)} ${m.unit || ''} (норма ${S.fmtRef(m)})`).join('; ');
+      go('ask');
+      sendQuestion(`Разбери мой бланк «${doc.title || 'анализ'}» от ${doc.date ? S.ruDate(doc.date) : 'без даты'}${doc.lab ? `, лаборатория ${doc.lab}` : ''}. Что тут стоит заметить? Показатели: ${body}`);
+      break;
+    }
     case 'ask-marker': {
       const m = S.markerList().find(x => x.key === el.dataset.key);
       if (!m) break;

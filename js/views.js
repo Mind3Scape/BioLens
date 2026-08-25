@@ -659,8 +659,13 @@ export function markersAll(app) {
 /* Строка списка. Раньше справа под числом висела разница вроде «+3.4» — без
    единицы и без ответа на вопрос «с какого момента». Направление и так видно
    по линии слева, поэтому справа осталось одно: сколько сейчас и в чём. */
-function row(m, { dot = true, line = true, date = false } = {}) {
+function row(m, { dot = true, line = true, date = false, grouped = false } = {}) {
   const st = m.stale ? 'unknown' : m.status;
+  /* Внутри карточки-группы число красится статусом, как в макете: красное
+     стоит отдельной карточкой сверху, поэтому зелёное ниже уже не может его
+     перебить. В общем списке правило прежнее — цветом горит только
+     неблагополучие, иначе экран заливает зелёным. */
+  const numColor = grouped ? toneVar(st) : inkTone(st);
   /* Подстрока по макету: «Норма: 7–40 · 1 замер · 12.05.2025». Границы
      полужирным — за ними глаз идёт первым, чтобы сравнить со значением
      справа. Дата в конце: она нужна, но не она главная. */
@@ -678,7 +683,7 @@ function row(m, { dot = true, line = true, date = false } = {}) {
     <div class="grow"><div class="nm">${esc(m.title)}</div><div class="sm mref">${parts.join(' · ')}</div></div>
     ${line && !m.stale ? statusLine(m.series, { w: 52, h: 24 }) : ''}
     <div class="mval">
-      <div class="val ${m.last.confidence < 0.75 ? 'doubt' : ''}" style="color:${inkTone(st)}">${S.trim(m.last.value)}</div>
+      <div class="val ${m.last.confidence < 0.75 ? 'doubt' : ''}" style="color:${numColor}">${S.trim(m.last.value)}</div>
       <div class="unit">${esc(m.unit)}</div>
     </div>
   </div>`;
@@ -692,7 +697,7 @@ function groupCard(iconName, title, tone, arr, { line = true, date = false } = {
   return `<div class="card gcard">
     <div class="gch"><span class="gci ${tone}">${icon(iconName, 'ico s')}</span>
       <div class="grow">${esc(title)}</div><span class="gcn">${arr.length}</span></div>
-    <div class="list">${arr.map(m => row(m, { dot: false, line, date })).join('')}</div>
+    <div class="list">${arr.map(m => row(m, { dot: false, line, date, grouped: true })).join('')}</div>
   </div>`;
 }
 
@@ -1307,24 +1312,37 @@ export function docView(app) {
   }
 
   if (ms.length) {
-    html += `<div class="cap">Что распознано</div><div class="card list">`;
-    /* Тот же вид строки, что на «Показателях» и в сводке: точка, имя, норма,
-       число. Слово «в норме» зелёным жирным стояло рядом с зелёной точкой,
-       которая уже это сказала, — цвет работал вхолостую семь строк подряд. */
-    html += ms.map(m => {
-      const st = m.refLow != null || m.refHigh != null
-        ? (m.value < (m.refLow ?? -Infinity) ? 'out' : m.value > (m.refHigh ?? Infinity) ? 'out' : 'ok') : 'unknown';
+    /* «Что распознано» из макета: не плоский список, а три группы — плохое,
+       спокойное, безымянное. Человек, открывший бланк, хочет знать не «что
+       там написано», а «что из этого плохо»; плоский список заставлял его
+       проходить глазами все двадцать строк и сравнивать числа с нормами
+       самому. */
+    const stOf = (m) => (m.refLow == null && m.refHigh == null) ? 'unknown'
+      : (m.value < (m.refLow ?? -Infinity) || m.value > (m.refHigh ?? Infinity)) ? 'out' : 'ok';
+    const mrow = (m) => {
+      const st = stOf(m);
       return `<div class="it" data-act="marker" data-key="${esc(m.key)}">
-        ${statusDot(st)}
         <div class="grow"><div class="nm">${esc(m.title)}</div>
-          <div class="sm">${m.refSource ? `норма ${esc(S.fmtRef(m))}${m.refSource === 'типовая' ? ' (общая для взрослых)' : ''}` : 'норма не указана'}</div></div>
-        <div style="text-align:right;min-width:50px">
-          <div class="val ${m.confidence < 0.75 ? 'doubt' : ''}" style="color:${inkTone(st)}">${S.trim(m.value)}</div>
-          <div class="unit" style="display:block;margin:1px 0 0">${esc(m.unit)}</div>
+          <div class="sm mref">${m.refSource ? `Норма: <b>${esc(S.fmtRef(m))}</b>${m.refSource === 'типовая' ? ' (общая)' : ''}` : 'Норма не указана'}</div></div>
+        <div class="mval">
+          <div class="val ${m.confidence < 0.75 ? 'doubt' : ''}" style="color:${toneVar(st)}">${S.trim(m.value)}</div>
+          <div class="unit">${esc(m.unit)}</div>
         </div>
       </div>`;
-    }).join('');
-    html += `</div>`;
+    };
+    const grp = (iconName, title, tone, arr) => arr.length ? `<div class="card gcard">
+      <div class="gch"><span class="gci ${tone}">${icon(iconName, 'ico s')}</span>
+        <div class="grow">${esc(title)}</div><span class="gcn">${arr.length}</span></div>
+      <div class="list">${arr.map(mrow).join('')}</div></div>` : '';
+
+    html += `<div class="cap">Что распознано · ${ms.length}</div>`;
+    html += grp('warning', 'Плохо', 'bad', ms.filter(m => stOf(m) === 'out'));
+    html += grp('check', 'В норме', 'ok', ms.filter(m => stOf(m) === 'ok'));
+    html += grp('eye', 'Норма не указана', 'grey', ms.filter(m => stOf(m) === 'unknown'));
+
+    if (db.settings().apiKey) {
+      html += `<button class="btn ghost" data-act="ask-doc" data-id="${esc(doc.id)}" style="margin-bottom:12px">${icon('sparkle', 'ico s')} Задать вопрос по этому бланку</button>`;
+    }
   }
 
   if (doc.note) html += `<div class="card flat"><div class="row">${icon('warning', 'ico s')}<div class="grow sm">${esc(doc.note)}</div></div></div>`;
