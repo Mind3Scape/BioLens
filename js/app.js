@@ -9,7 +9,7 @@ import * as V from './views.js';
 import { $, $$, esc, toast, sheet, confirmSheet, wireCharts } from './ui.js';
 import { icon } from './icons.js';
 import { fetchModels, checkKey, summarize, askArchive, mealFeedback, chat, VOICE_RULES } from './openrouter.js';
-import { scan } from './scan.js';
+import { scan, scanMeal } from './scan.js';
 import { fillDemo, clearDemo, hasDemo } from './demo.js';
 import * as TG from './telegram.js';
 import * as BK from './backup.js';
@@ -687,10 +687,10 @@ async function addMealFlow(useCamera) {
 
   let file = null;
   if (useCamera) {
-    if (await TG.canUseStreamCamera()) {
-      const shots = await scan();
-      file = shots?.[0] || null;
-    }
+    /* Живой сканер тарелки, а не системная камера: между «захотел записать
+       обед» и «записал» должно остаться одно движение. Если поток недоступен
+       (старый WebView, отказ в доступе) — честно уходим в системную камеру. */
+    if (await TG.canUseStreamCamera()) file = await scanMeal();
     if (!file) file = await TG.nativeCameraFile();
   } else {
     file = await new Promise(res => {
@@ -708,10 +708,60 @@ async function addMealFlow(useCamera) {
   if (meal.status === 'error') toast(meal.error);
   else if (meal.status === 'skipped') toast('Это не похоже на еду');
   else {
-    toast(`${meal.title}: ${Math.round(meal.nutrition.kcal)} ккал`);
     if (db.settings().autoCloud) BK.scheduleCloudSave();
     foodFeedback();
+    mealReviewSheet(meal);
   }
+}
+
+/* Карточка результата из макета: что распознано и во что это встало по КБЖУ,
+   сразу после снимка и с возможностью поправить. Оценка по фотографии — это
+   прикидка, а человек видел порцию своими глазами: пусть исправит цифру
+   сейчас, пока помнит, а не через неделю в списке. */
+function mealReviewSheet(meal) {
+  const n = meal.nutrition || {};
+  const cell = (id, label, val, unit) => `<div class="mrc">
+    <div class="mrl">${label}</div>
+    <div class="mrv"><input type="number" inputmode="decimal" id="mr-${id}" value="${Math.round(val || 0)}"><span>${unit}</span></div>
+  </div>`;
+
+  const s = sheet(`
+    <div class="row" style="gap:12px;align-items:flex-start;margin-bottom:14px">
+      <div class="thumb" style="width:64px;aspect-ratio:1;flex:0 0 auto"><img data-blob="${esc(meal.blobId)}" alt=""></div>
+      <div class="grow">
+        <div class="nm" style="font-size:15.5px;font-weight:740;line-height:1.3">${esc(meal.title || 'Блюдо')}</div>
+        ${meal.items?.length ? `<div class="sm" style="margin-top:4px;line-height:1.45">${esc(meal.items.map(i => `${i.name} ~${Math.round(i.grams)} г`).join(', '))}</div>` : ''}
+      </div>
+    </div>
+    <div class="mrgrid">
+      ${cell('kcal', 'Калории', n.kcal, 'ккал')}
+      ${cell('protein_g', 'Белки', n.protein_g, 'г')}
+      ${cell('carbs_g', 'Углеводы', n.carbs_g, 'г')}
+      ${cell('fat_g', 'Жиры', n.fat_g, 'г')}
+    </div>
+    ${meal.confidence != null && meal.confidence < 0.6
+      ? `<div class="sm" style="margin-top:11px;line-height:1.5">Порцию оценил <b style="color:var(--ink)">на глаз</b> — если знаешь вес точнее, поправь числа.</div>`
+      : `<div class="sm" style="margin-top:11px;line-height:1.5">Оценка по фотографии приблизительная. Знаешь точнее — поправь.</div>`}
+    <button class="btn" data-ok style="margin-top:16px">Добавить в день</button>
+    <button class="btn ghost" data-del style="margin-top:9px">Удалить снимок</button>`);
+
+  hydrateImages(s.root);
+
+  s.root.querySelector('[data-ok]').onclick = async () => {
+    const num = (id) => { const v = +s.root.querySelector('#mr-' + id)?.value; return isFinite(v) && v >= 0 ? v : null; };
+    const patch = {};
+    for (const k of ['kcal', 'protein_g', 'carbs_g', 'fat_g']) { const v = num(k); if (v != null) patch[k] = v; }
+    if (Object.keys(patch).length) await S.updateMealNutrition(meal.id, patch);
+    s.close();
+    render();
+    toast(`${meal.title}: ${Math.round(patch.kcal ?? meal.nutrition.kcal)} ккал`);
+  };
+  s.root.querySelector('[data-del]').onclick = async () => {
+    s.close();
+    await S.deleteMeal(meal.id);
+    render();
+    toast('Удалено');
+  };
 }
 
 /* «Что съесть на ужин» — единственное место, где приложение говорит о еде

@@ -112,3 +112,97 @@ export async function scan() {
     };
   });
 }
+
+
+/* ── сканер еды ──────────────────────────────────────────────────
+   Отдельный от бланка: у тарелки другая задача и другой ритм. Бланк кладут
+   на стол и ловят резкость, тарелку снимают сверху за секунду — поэтому тут
+   нет ни оценки фокуса, ни многостраничности, зато есть уголки кадра и
+   бегущая линия: они говорят «я смотрю» без единого слова.
+
+   Живой поток нужен ровно затем, чтобы человек НЕ уходил в системную камеру
+   и обратно: между «захотел записать обед» и «записал» должно остаться одно
+   движение, иначе еду перестают отмечать через неделю. */
+export async function scanMeal() {
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1920 } },
+      audio: false,
+    });
+  } catch (e) {
+    toast(e.name === 'NotAllowedError' ? 'Нужен доступ к камере' : 'Камера недоступна на этом устройстве');
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'scan-wrap meal';
+    wrap.innerHTML = `
+      <div class="mscan-top">
+        <button class="rnd" id="mClose" aria-label="закрыть">${icon('cross', 'ico s')}</button>
+        <div class="mscan-ttl">Сканер еды</div>
+        <button class="rnd" id="mTorch" aria-label="вспышка" hidden>${icon('lightning', 'ico s')}</button>
+      </div>
+      <div class="mscan-view">
+        <video playsinline muted autoplay></video>
+        <div class="mscan-frame"><i></i><i></i><i></i><i></i><span class="mscan-line"></span></div>
+      </div>
+      <div class="mscan-hint">Наведи на тарелку сверху. Чем меньше лишнего в кадре, тем точнее оценка.</div>
+      <div class="mscan-bar">
+        <button class="mscan-side" id="mPick">${icon('file', 'ico s')}<span>Галерея</span></button>
+        <button class="shutter" id="mShot" aria-label="снять"></button>
+        <div class="mscan-side ghost"></div>
+      </div>`;
+    document.body.appendChild(wrap);
+
+    const video = wrap.querySelector('video');
+    video.srcObject = stream;
+
+    function close(result) {
+      stream.getTracks().forEach(t => t.stop());
+      wrap.remove();
+      resolve(result);
+    }
+
+    /* Фонарик есть далеко не на всех камерах — кнопку показываем только
+       когда устройство само сказало, что умеет. */
+    const track = stream.getVideoTracks()[0];
+    const caps = track.getCapabilities?.() || {};
+    let torch = false;
+    if (caps.torch) {
+      const tb = wrap.querySelector('#mTorch');
+      tb.hidden = false;
+      tb.onclick = async () => {
+        torch = !torch;
+        try { await track.applyConstraints({ advanced: [{ torch }] }); tb.classList.toggle('on', torch); }
+        catch { toast('Вспышка не включилась'); }
+      };
+    }
+
+    wrap.querySelector('#mClose').onclick = () => close(null);
+
+    wrap.querySelector('#mPick').onclick = () => {
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = 'image/*';
+      inp.onchange = () => close(inp.files?.[0] || null);
+      inp.click();
+    };
+
+    wrap.querySelector('#mShot').onclick = async () => {
+      if (!video.videoWidth) { toast('Камера ещё не готова — секунду'); return; }
+      /* Режем по центру в квадрат: тарелка круглая, а широкий кадр тащит в
+         оценку половину стола и занижает вес порции. */
+      const side = Math.min(video.videoWidth, video.videoHeight);
+      const cv = document.createElement('canvas');
+      cv.width = side; cv.height = side;
+      cv.getContext('2d').drawImage(video,
+        (video.videoWidth - side) / 2, (video.videoHeight - side) / 2, side, side, 0, 0, side, side);
+      const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.9));
+      if (!blob) { toast('Кадр не получился, сними ещё раз'); return; }
+      wrap.querySelector('.mscan-frame').classList.add('shot');
+      if (navigator.vibrate) navigator.vibrate(12);
+      setTimeout(() => close(new File([blob], 'тарелка.jpg', { type: 'image/jpeg' })), 130);
+    };
+  });
+}

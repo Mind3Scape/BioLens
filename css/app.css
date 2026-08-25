@@ -419,6 +419,40 @@ html[data-theme="dark"] .aimk{background:rgba(255,255,255,0.14);color:var(--ink)
 .shutter{width:70px;height:70px;border-radius:99px;background:#fff;border:5px solid rgba(255,255,255,.35);cursor:pointer}
 .scan-hint{color:rgba(255,255,255,.85);font-size:13px;text-align:center;padding:0 20px 10px;background:#000}
 
+/* ── сканер еды (из макета) ──
+   Уголки кадра и бегущая линия вместо сплошной рамки: сплошная рамка велит
+   «положи ровно», а тарелку кладут как получится — уголки только показывают,
+   куда смотрит приложение. */
+.scan-wrap.meal{background:#0A0B0D}
+.mscan-top{display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px}
+.mscan-top .rnd{width:38px;height:38px;min-width:38px;background:rgba(255,255,255,0.12);color:#fff;box-shadow:none}
+/* `.rnd` объявлена как flex, и она перебивала атрибут hidden: кнопка вспышки
+   висела на устройствах, где вспышки нет. */
+.mscan-top .rnd[hidden]{display:none}
+.mscan-top .rnd.on{background:#fff;color:#15161B}
+.mscan-ttl{flex:1;text-align:center;color:#fff;font-size:15px;font-weight:700;letter-spacing:-0.3px}
+.mscan-view{position:relative;flex:1;overflow:hidden}
+.mscan-view video{width:100%;height:100%;object-fit:cover}
+.mscan-frame{position:absolute;inset:8% 7%;pointer-events:none}
+.mscan-frame i{position:absolute;width:30px;height:30px;border:3px solid rgba(255,255,255,.95);border-radius:4px}
+.mscan-frame i:nth-child(1){top:0;left:0;border-right:none;border-bottom:none;border-top-left-radius:16px}
+.mscan-frame i:nth-child(2){top:0;right:0;border-left:none;border-bottom:none;border-top-right-radius:16px}
+.mscan-frame i:nth-child(3){bottom:0;left:0;border-right:none;border-top:none;border-bottom-left-radius:16px}
+.mscan-frame i:nth-child(4){bottom:0;right:0;border-left:none;border-top:none;border-bottom-right-radius:16px}
+.mscan-line{position:absolute;left:8px;right:8px;height:2px;border-radius:2px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.9),transparent);animation:mline 2.6s ease-in-out infinite}
+@keyframes mline{0%{top:4%}50%{top:96%}100%{top:4%}}
+/* Снимок сделан — уголки коротко вспыхивают: подтверждение без диалога. */
+.mscan-frame.shot i{border-color:#3DD183}
+@media (prefers-reduced-motion: reduce){.mscan-line{animation:none;top:50%}}
+.mscan-hint{color:rgba(255,255,255,.75);font-size:12.5px;line-height:1.45;text-align:center;padding:14px 24px 4px}
+.mscan-bar{padding:10px 24px calc(22px + var(--safe-b));display:flex;align-items:center;justify-content:space-between;gap:16px}
+.mscan-side{width:74px;display:flex;flex-direction:column;align-items:center;gap:5px;background:none;border:none;
+  color:rgba(255,255,255,.85);font-family:inherit;font-size:11px;font-weight:600;cursor:pointer}
+.mscan-side .ico{width:20px;height:20px}
+.mscan-side.ghost{pointer-events:none}
+.mscan-side:active{opacity:.6}
+
 /* ── дашборд плиток ──────────────────────────────────────────────
    По две в ряд. Плитка — короткое наблюдение о человеке, а не кнопка со
    счётчиком. Цвет здесь строгий: светофор (зелёный, оранжевый, красный)
@@ -539,6 +573,18 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
 .obfoot{position:fixed;left:14px;right:14px;bottom:calc(10px + var(--safe-b));z-index:5}
 .obfoot:before{content:"";position:absolute;left:-14px;right:-14px;bottom:-40px;top:-30px;
   background:linear-gradient(transparent, var(--canvas) 34%);pointer-events:none;z-index:-1}
+
+/* ── карточка результата тарелки (из макета) ── */
+/* minmax(0,1fr), а не 1fr: у поля ввода своя минимальная ширина «на двадцать
+   знаков», и она раздувала колонки — вторая половина сетки уезжала за экран. */
+.mrgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.mrc{background:var(--surface);box-shadow:var(--shadow);border-radius:14px;padding:11px 13px;min-width:0}
+.mrl{font-size:11.5px;font-weight:620;color:var(--ink3);letter-spacing:-0.1px}
+.mrv{display:flex;align-items:baseline;gap:4px;margin-top:3px}
+.mrv input{width:auto;flex:1;min-width:0;background:none;border:none;padding:0;border-radius:0;
+  font-size:22px;font-weight:800;letter-spacing:-0.8px;color:var(--ink)}
+.mrv input:focus{background:none;border:none;box-shadow:0 1px 0 var(--ink3)}
+.mrv span{font-size:11.5px;font-weight:650;color:var(--ink3)}
 
 /* ── меню «плюса» плитками (из макета) ── */
 .agrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}

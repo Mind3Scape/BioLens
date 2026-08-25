@@ -762,6 +762,19 @@ export async function addMeal(file, { model } = {}) {
   return meal;
 }
 
+/* Правка чисел блюда руками. Оценка по фотографии — это прикидка, и человек
+   часто знает точнее: он видел порцию своими глазами. Пусть поправит, а не
+   спорит с приложением молча. */
+export async function updateMealNutrition(id, patch) {
+  const m = state.meals.find(x => x.id === id);
+  if (!m) return null;
+  m.nutrition = { ...(m.nutrition || {}), ...patch };
+  m.edited = true;
+  await db.put('meals', m);
+  cache.list = null;
+  return m;
+}
+
 export async function deleteMeal(id) {
   const m = state.meals.find(x => x.id === id);
   if (m?.blobId) await db.del('blobs', m.blobId);
