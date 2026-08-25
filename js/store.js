@@ -786,10 +786,43 @@ export function dayTotals(date) {
 
 /* Ориентиры на день. Это не назначение, а общеизвестные дневные рамки,
    от которых удобно считать «много / мало». */
+/* Сколько тело тратит в покое — формула Миффлина-Сан-Жеора, обычная
+   арифметика из учебника, а не назначение диеты. Дальше умножаем на
+   подвижность и сдвигаем под цель. Раньше рамка была одна на всех: 2400
+   мужчинам, 1900 женщинам — то есть для человека 60 кг и человека 100 кг
+   приложение считало одинаково и ошибалось на обоих. */
+export const ACTIVITY = [
+  { id: 'low',   k: 1.2,   title: 'Сидячий',   sub: 'работа за столом, тренировок нет' },
+  { id: 'light', k: 1.375, title: 'Лёгкий',    sub: '1–3 тренировки в неделю' },
+  { id: 'mid',   k: 1.55,  title: 'Умеренный', sub: '3–5 тренировок в неделю' },
+  { id: 'high',  k: 1.725, title: 'Высокий',   sub: 'почти каждый день или тяжёлый труд' },
+];
+export const W_GOALS = [
+  { id: 'lose', shift: -0.15, title: 'Похудеть',      sub: 'рамка на 15% ниже расхода' },
+  { id: 'keep', shift: 0,     title: 'Держать вес',   sub: 'рамка равна расходу' },
+  { id: 'gain', shift: 0.12,  title: 'Набрать',       sub: 'рамка на 12% выше расхода' },
+];
+
+export function energyPlan() {
+  const s = db.settings();
+  const male = s.sex !== 'f';
+  const age = Math.max(14, Math.min(100, new Date().getFullYear() - (s.birthYear || 1990)));
+  const w = s.weightKg || 75, h = s.heightCm || 175;
+  const bmr = Math.round(10 * w + 6.25 * h - 5 * age + (male ? 5 : -161));
+  const act = ACTIVITY.find(a => a.id === s.activity) || ACTIVITY[1];
+  const goal = W_GOALS.find(g => g.id === s.weightGoal) || W_GOALS[1];
+  const spend = Math.round(bmr * act.k);
+  /* Ниже 1200/1500 не опускаемся никогда: это общепринятый нижний предел, за
+     которым «дневная рамка» перестаёт быть безобидным ориентиром. */
+  const floor = male ? 1500 : 1200;
+  const kcal = Math.max(floor, Math.round((spend * (1 + goal.shift)) / 10) * 10);
+  return { bmr, spend, kcal, act, goal, floored: kcal === floor && spend * (1 + goal.shift) < floor };
+}
+
 export function dayTargets() {
   const s = db.settings();
   const male = s.sex !== 'f';
-  const kcal = male ? 2400 : 1900;
+  const kcal = energyPlan().kcal;
   return {
     kcal,
     fiber_g: male ? 30 : 25,

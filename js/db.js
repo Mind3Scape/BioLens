@@ -156,6 +156,12 @@ const defaults = {
   heightCm: 182,
   weightKg: 79,
   onboarded: false,
+  /* Цель по питанию и подвижность — из онбординга раздела «Еда».
+     До них дневная рамка была одна на всех: 2400 мужчинам, 1900 женщинам. */
+  activity: 'light',       // low · light · mid · high
+  weightGoal: 'keep',      // lose · keep · gain
+  targetWeightKg: null,
+  foodOnboarded: false,
   units: {},          // ключ показателя → предпочтительная единица
   theme: 'light',   // светлая по умолчанию; тёмную включают руками
   lastModelsFetch: 0,

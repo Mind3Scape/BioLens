@@ -71,6 +71,7 @@ function render() {
   else if (app.route === 'doc') html = V.docView(app);
   else if (app.route === 'inbox') html = V.inbox(app);
   else if (app.route === 'food') html = V.food(app);
+  else if (app.route === 'goal') html = V.goalView(app);
   else if (app.route === 'meal') html = V.mealView(app);
   else if (app.route === 'ask') html = V.ask(app);
   else if (app.route === 'due') html = V.due(app);
@@ -92,7 +93,7 @@ function render() {
   /* Подсвечиваем вкладку только там, где экран действительно ей принадлежит.
      Хроника, документ и «для врача» ничьи — гореть «Здоровью», пока ты не там,
      значит врать про своё же положение. */
-  const OWNER = { marker: 'markers', system: 'markers', 'markers-all': 'markers', gaps: 'markers', meal: 'food' };
+  const OWNER = { marker: 'markers', system: 'markers', 'markers-all': 'markers', gaps: 'markers', meal: 'food', goal: 'food' };
   $('#tabbar').innerHTML = s.onboarded ? V.tabbar(OWNER[app.route] || app.route) : '';
   // док пересобирается вместе с экраном — сжатое состояние надо вернуть на место
   if (dockMini) $('#dock')?.classList.add('mini');
@@ -475,6 +476,21 @@ async function handleAction(el) {
     case 'model-tab': app.modelTab = el.dataset.tab; app.modelLimit = 25; render(); break;
     case 'model-free': app.modelFree = el.dataset.v === '1'; app.modelLimit = 25; render(); break;
     case 'all-by': app.allBy = el.dataset.v; render(); break;
+    case 'set-activity': db.saveSettings({ activity: el.dataset.v }); render(); break;
+    case 'set-wgoal': db.saveSettings({ weightGoal: el.dataset.v }); render(); break;
+    case 'save-goal': {
+      const w = +$('#weightKg')?.value, tw = +$('#targetWeightKg')?.value;
+      const patch = {};
+      if (w) patch.weightKg = w;
+      if (tw) patch.targetWeightKg = tw;
+      /* Цель сама подсказывает направление: человек, поставивший 75 вместо 90,
+         уже сказал «похудеть» — переспрашивать это отдельной кнопкой глупо. */
+      if (w && tw) patch.weightGoal = tw < w - 1 ? 'lose' : tw > w + 1 ? 'gain' : 'keep';
+      db.saveSettings(patch);
+      toast('Цель сохранена');
+      render();
+      break;
+    }
     case 'model-more': app.modelLimit = (app.modelLimit || 25) + 25; render(); break;
     case 'pick-model': {
       const id = el.dataset.id;

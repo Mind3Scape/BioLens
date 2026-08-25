@@ -1707,6 +1707,58 @@ export function medDetail(app) {
 
 /* ══ ЕДА ═════════════════════════════════════════════════════ */
 
+/* ══ ВАША ЦЕЛЬ (из макета) ═══════════════════════════════════
+   Экран, которого у нас не было вовсе: цель по весу, подвижность и то, как
+   из них получается дневная рамка. Раньше рамка бралась с потолка — 2400
+   мужчинам, 1900 женщинам, — и человек не мог ни узнать откуда, ни поправить. */
+export function goalView(app) {
+  const s = db.settings();
+  const e = S.energyPlan();
+  const tw = s.targetWeightKg || s.weightKg;
+
+  let html = backHeadWide('Ваша цель', 'по ней считается дневная рамка');
+
+  html += `<div class="card">
+    <div class="cap" style="padding:0 0 8px">Цель по весу</div>
+    <div class="row" style="align-items:baseline;gap:10px">
+      <div style="font-size:30px;font-weight:800;letter-spacing:-1.2px">${s.weightKg}<span style="font-size:15px;color:var(--ink3)">кг</span></div>
+      <div style="color:var(--ink4);font-size:20px">→</div>
+      <div style="font-size:30px;font-weight:800;letter-spacing:-1.2px;color:var(--ok)">${tw}<span style="font-size:15px;color:var(--ink3)">кг</span></div>
+    </div>
+    <div class="row" style="gap:12px;margin-top:14px">
+      <div class="grow"><label class="lab">Сейчас, кг</label><input type="number" id="weightKg" value="${s.weightKg}" inputmode="numeric"></div>
+      <div class="grow"><label class="lab">Хочу, кг</label><input type="number" id="targetWeightKg" value="${tw}" inputmode="numeric"></div>
+    </div>
+    <button class="mini" data-act="save-goal" style="margin-top:12px">Сохранить</button>
+  </div>`;
+
+  html += `<div class="cap">Что делаем с весом</div>`;
+  for (const g of S.W_GOALS) {
+    html += obPick('set-wgoal', g.id, s.weightGoal === g.id, g.title, g.sub);
+  }
+
+  html += `<div class="cap" style="margin-top:6px">Насколько вы активны</div>`;
+  for (const a of S.ACTIVITY) {
+    html += obPick('set-activity', a.id, (s.activity || 'light') === a.id, a.title, a.sub);
+  }
+
+  /* Открытая арифметика: человек видит, из чего сложилась его рамка, и может
+     поспорить с ней. Скрытое число вызывает недоверие ко всему экрану. */
+  html += `<div class="card" style="margin-top:6px">
+    <div class="cap" style="padding:0 0 9px">Как получилась рамка</div>
+    <div class="kv"><span class="k">Тратится в покое</span><span class="v">${e.bmr} ккал</span></div>
+    <div class="kv"><span class="k">С учётом подвижности (${esc(e.act.title.toLowerCase())})</span><span class="v">${e.spend} ккал</span></div>
+    <div class="kv"><span class="k">Поправка на цель</span><span class="v">${e.goal.shift === 0 ? 'без сдвига' : `${e.goal.shift > 0 ? '+' : ''}${Math.round(e.goal.shift * 100)}%`}</span></div>
+    <div class="divide"></div>
+    <div class="kv"><span class="k" style="color:var(--ink);font-weight:700">Дневная рамка</span>
+      <span class="v" style="font-size:17px;font-weight:800;color:var(--ink)">${e.kcal} ккал</span></div>
+    ${e.floored ? `<div class="sm" style="margin-top:10px;line-height:1.5">Расчёт дал меньше, но ниже <b>${s.sex === 'f' ? 1200 : 1500} ккал</b> я рамку не опускаю — это общепринятый предел, за которым ориентир перестаёт быть безобидным.</div>` : ''}
+  </div>`;
+
+  html += `<div class="disc">Формула Миффлина-Сан-Жеора — обычная арифметика, а не назначение диеты. Настоящую цель по питанию ставит врач, особенно если есть хронические болезни.</div>`;
+  return html;
+}
+
 export function food(app) {
   const today = S.todayISO();
   const week = weekDays(today);
@@ -1736,6 +1788,13 @@ export function food(app) {
       </button>`;
     }).join('')}</div>
   </div>`;
+
+  /* Рамка дня и как её поправить — сразу под неделей: это первое, о чём
+     спрашивают, увидев «из 2400». */
+  const en = S.energyPlan();
+  html += `<div class="grp"><div class="gi" data-act="go" data-r="goal">${icon('target', 'ico s')}
+    <div class="t">Ваша цель</div>
+    <div class="v">${esc(en.goal.title.toLowerCase())} · ${en.kcal} ккал</div>${chevron()}</div></div>`;
 
   if (goal) {
     html += `<div class="card note tap" data-act="marker" data-key="${esc(goal.key)}">
@@ -1807,17 +1866,34 @@ export function food(app) {
 
   if (app.aiFood) html += aiBlock('по цели', esc(app.aiFood).replace(/\n/g, '<br>'));
 
-  html += `<div class="cap">Что съел</div><div class="card list">`;
-  for (const m of meals) {
-    html += `<div class="it" data-act="meal" data-id="${esc(m.id)}">
-      <div class="thumb" style="width:44px;aspect-ratio:1"><img data-blob="${esc(m.blobId)}" alt=""></div>
-      <div class="grow"><div class="nm">${esc(m.title || 'Блюдо')}</div>
-        <div class="sm">${new Date(m.at).toTimeString().slice(0, 5)} · ${Math.round(m.nutrition?.kcal || 0)} ккал · Б ${Math.round(m.nutrition?.protein_g || 0)} · Ж ${Math.round(m.nutrition?.fat_g || 0)} · У ${Math.round(m.nutrition?.carbs_g || 0)}</div></div>
-      ${m.confidence != null && m.confidence < 0.6 ? `<span class="mini">на глаз</span>` : ''}
-      ${chevron()}
+  /* Съеденное разложено ПО ПРИЁМАМ ПИЩИ, как в макете, а не плоским списком.
+     Плоский список отвечал на «что я ел», сгруппированный — на «чем был мой
+     завтрак и сколько осталось на ужин», а это и есть вопрос дня. Пустой
+     приём не прячем: пустой ужин в семь вечера — сообщение, а не дырка. */
+  html += `<div class="cap">Съедено</div>`;
+  for (const slot of S.MEAL_SLOTS) {
+    const inSlot = meals.filter(m => {
+      const h = new Date(m.at).getHours();
+      return (S.MEAL_SLOTS.find(x => h < x.till) || S.MEAL_SLOTS[3]).id === slot.id;
+    });
+    const row = plan.rows.find(r => r.id === slot.id);
+    const isNext = plan.next && plan.next.id === slot.id && date === today;
+    if (!inSlot.length && !isNext) continue;
+    html += `<div class="card gcard">
+      <div class="gch"><span class="gci grey">${icon(MEAL_ICON[slot.id], 'ico s')}</span>
+        <div class="grow">${slot.title}${isNext ? ' <span style="font-weight:600;color:var(--ink4);font-size:13px">· впереди</span>' : ''}</div>
+        <span class="gcn">${inSlot.length ? `${Math.round(row.kcal)} / ~${row.target}` : `~${row.target}`} ккал</span></div>
+      <div style="margin:2px 0 10px">${bar(row.kcal, row.target, { color: 'var(--teal)', warn: false })}</div>
+      ${inSlot.length ? `<div class="list">${inSlot.map(m => `<div class="it" data-act="meal" data-id="${esc(m.id)}">
+        <div class="thumb" style="width:44px;aspect-ratio:1"><img data-blob="${esc(m.blobId)}" alt=""></div>
+        <div class="grow"><div class="nm">${esc(m.title || 'Блюдо')}</div>
+          <div class="sm">${new Date(m.at).toTimeString().slice(0, 5)} · Б ${Math.round(m.nutrition?.protein_g || 0)} · Ж ${Math.round(m.nutrition?.fat_g || 0)} · У ${Math.round(m.nutrition?.carbs_g || 0)}</div></div>
+        ${m.confidence != null && m.confidence < 0.6 ? `<span class="mini">на глаз</span>` : ''}
+        <div class="mval"><div class="val" style="font-size:17px">${Math.round(m.nutrition?.kcal || 0)}</div><div class="unit">ккал</div></div>
+      </div>`).join('')}</div>`
+      : `<div class="sm" style="padding:2px 0 12px;line-height:1.5">Ещё ничего не снято. ${date === today ? `На этот приём в рамке остаётся <b style="color:var(--ink)">~${row.target} ккал</b>.` : ''}</div>`}
     </div>`;
   }
-  html += `</div>`;
 
   const pending = S.state.meals.filter(m => m.status === 'reading');
   if (pending.length) html += `<div class="card"><div class="row"><div class="spin"></div><div class="grow sm">Смотрю тарелку…</div></div></div>`;
@@ -1833,28 +1909,18 @@ const MEAL_ICON = { breakfast: 'sunrise', lunch: 'sun', dinner: 'moon', snack: '
 /* Раскладка дня по приёмам пищи. Это не диета: обычная рамка «четверть на
    завтрак, треть на обед, треть на ужин», разложенная по дневному ориентиру.
    Ценность в одной строке — «на ужин остаётся 700 ккал». */
+/* Раньше здесь лежала вторая копия дня: те же четыре приёма с теми же
+   полосами, что и в списке съеденного ниже. Один день, рассказанный дважды,
+   человек читает как два разных. Ряды переехали в шапки самих приёмов, а
+   тут осталось то, чего больше нигде нет, — подсказка, что съесть дальше. */
 function mealPlanCard(plan, app, isToday = true) {
-  const rows = plan.rows.map(r => {
-    const done = r.count > 0;
-    const pct = r.target ? Math.min(1, r.kcal / r.target) : 0;
-    return `<div class="mrow ${done ? 'done' : ''} ${plan.next && plan.next.id === r.id && isToday ? 'next' : ''}">
-      <div class="row" style="margin-bottom:5px;gap:7px">
-        <span class="tic sm-ic">${icon(MEAL_ICON[r.id], 'ico s')}</span>
-        <div class="grow sm" style="color:var(--ink);font-weight:650">${r.title}${plan.next && plan.next.id === r.id && isToday ? ' · впереди' : ''}</div>
-        <div class="sm">${done ? `${Math.round(r.kcal)} из ~${r.target} ккал` : `~${r.target} ккал`}</div>
-      </div>
-      ${bar(r.kcal, r.target, { color: 'var(--teal)', warn: false })}
-    </div>`;
-  }).join('');
-
   const ask = db.settings().apiKey && isToday
     ? `<button class="mini" data-act="meal-idea" style="margin-top:12px">${icon('sparkle', 'ico s')} ${app.aiMealBusy ? 'думаю…' : `Что съесть${plan.next ? ' на ' + plan.next.title.toLowerCase() : ' дальше'}?`}</button>`
     : `<div class="sm" style="margin-top:11px">С ключом OpenRouter я подберу, что именно съесть — с учётом цели из анализов и записанных аллергий.</div>`;
 
-  return `<div class="cap">Как разложить день</div>
-  <div class="card">
-    ${rows}
-    ${app.aiMeal ? `<div class="divide"></div><div class="sm" style="font-size:13.5px;line-height:1.55;color:var(--ink2)">${esc(app.aiMeal).replace(/\n/g, '<br>')}</div>` : ''}
+  return `<div class="card">
+    ${plan.next && isToday ? `<div class="nm" style="font-size:14.5px;font-weight:720">Впереди ${esc(plan.next.title.toLowerCase())} — в рамке остаётся ~${plan.next.target} ккал</div>` : ''}
+    ${app.aiMeal ? `<div class="sm" style="font-size:13.5px;line-height:1.55;color:var(--ink2);margin-top:8px">${esc(app.aiMeal).replace(/\n/g, '<br>')}</div>` : ''}
     ${ask}
     <div class="sm" style="margin-top:10px">Рамка простая: четверть дня на завтрак, треть на обед, треть на ужин. Это ориентир, а не назначение диеты.</div>
   </div>`;
