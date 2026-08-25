@@ -6,7 +6,7 @@ import * as db from './db.js';
 import * as MED from './meds.js';
 import { icon } from './icons.js';
 import { esc, sparkline, statusLine, dotBar, chart, statusDot, statusTag, statusWord, toneVar, inkTone, toneDot, aiBlock, emptyBlock, ring, bar, rangeBar, gradeScale, gauge, kcalRing } from './ui.js';
-import { markerTitle, markerGroup, MARKERS, matchMarker } from './markers.js';
+import { markerTitle, markerGroup, markerUnit, defaultRef, MARKERS, matchMarker } from './markers.js';
 import { info } from './reference.js';
 import { tgUserName, tgUser, inTelegram } from './telegram.js';
 import { tiles, notices } from './insights.js';
@@ -554,15 +554,30 @@ export function gapsView(app) {
   html += `<div class="card flat"><div class="row" style="align-items:flex-start">${icon('eye', 'ico s')}
     <div class="grow sm" style="line-height:1.55">Это обычный базовый набор для каждой системы, а не назначение. Я вижу только то, что попало в бланки: если анализ сдавался на бумаге и в приложение не попал — для меня его нет.</div></div></div>`;
 
+  /* Карточки-групп по системам, как в макете, и у каждого недостающего
+     анализа — ТИПОВАЯ НОРМА и единица. Чипы с одними названиями отвечали
+     на «чего нет», но не на «что я вообще иду сдавать»: человек шёл в
+     лабораторию со списком слов. */
+  const sexNow = db.settings().sex;
   for (const s of sys) {
-    html += `<div class="card gapc tint-${s.tint}">
-      <div class="row tap" data-act="system" data-id="${esc(s.id)}">
-        <span class="sysi">${icon(s.icon, 'ico s')}</span>
-        <div class="grow"><div class="nm">${esc(s.title)}</div>
-          <div class="sm">${s.markers.length ? `сдано ${s.coreHave} из ${s.coreTotal}` : 'система не тронута вовсе'} · ${esc(s.about)}</div></div>
-        ${chevron()}
-      </div>
-      <div class="chips" style="margin-top:11px">${s.missingTitles.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div>
+    html += `<div class="card gcard">
+      <div class="gch" data-act="system" data-id="${esc(s.id)}"><span class="gci tint-${s.tint}">${icon(s.icon, 'ico s')}</span>
+        <div class="grow">${esc(s.title)}</div><span class="gcn">${s.missing.length}</span></div>
+      <div class="list">${s.missing.map(k => {
+        const ref = defaultRef(k, sexNow);
+        const unit = markerUnit(k);
+        /* Границы печатаем нашим же форматтером: у половины показателей
+           коридор открыт с одной стороны, и «1–0 ммоль/л» у ЛПВП — это не
+           норма, а мусор. fmtRef говорит «от 1» и «до 1.7» как надо. */
+        const refText = ref ? S.fmtRef({ refLow: ref[0] || null, refHigh: ref[1] || null }) : null;
+        return `<div class="it" data-act="add">
+          <div class="grow"><div class="nm">${esc(markerTitle(k))}</div>
+            <div class="sm mref">${refText && refText !== 'не указана'
+              ? `Норма: <b>${esc(refText)}${unit ? ' ' + esc(unit) : ''}</b> · типовая`
+              : 'Норму напишет лаборатория в бланке'}</div></div>
+          ${chevron()}
+        </div>`;
+      }).join('')}</div>
     </div>`;
   }
 
