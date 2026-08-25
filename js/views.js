@@ -690,12 +690,17 @@ function humanRead({ key, last, prev, base, st, unit, series, showDiff, diff, ga
     if (why) lines.push(`<b>Почему так бывает.</b> ${esc(why)}`);
   }
 
-  let out = `<div class="card hread">
+  return `<div class="card hread">
     <div class="hr-hd">${icon('sparkle', 'ico s')}<span>Что это значит</span></div>
     ${lines.map(l => `<p>${l}</p>`).join('')}
   </div>`;
+}
 
-  // 4. Что делать дальше — отдельной карточкой, как в макете
+/* «Что делать дальше» и компания показателя идут ПОСЛЕ графика.
+   Порядок экрана: число → смысл словами → картинка пути → действие → контекст.
+   Раньше график стоял ниже всех объяснений, и человек читал про «вырос на
+   3.4 за год», не видя, как этот рост выглядел. */
+function nextSteps({ key, last, st, ref }) {
   const todo = [];
   const months = S.recheckMonths(key, st);
   if (st === 'out' && ref?.redFlag) todo.push(esc(ref.redFlag));
@@ -705,6 +710,7 @@ function humanRead({ key, last, prev, base, st, unit, series, showDiff, diff, ga
     const tip = ref.prep.replace(/^(Голодание не требуется|Специальная подготовка не нужна)[^.]*\.\s*/, '').trim();
     if (tip) todo.push(`<b>Перед пересдачей.</b> ${esc(tip)}`);
   }
+  let out = '';
   if (todo.length) {
     out += `<div class="card hread">
       <div class="hr-hd">${icon('target', 'ico s')}<span>Что делать дальше</span></div>
@@ -814,6 +820,7 @@ export function markerDetail(app) {
   html += humanRead({ key, last, prev, base, st, unit, series, showDiff, diff, gapDays, period, noise, twoLabsCloseInTime, sig });
 
   /* График сразу за объяснением: сначала «что это значит», потом «как шло». */
+  const afterChart = nextSteps({ key, last, st, ref: info(key) });
   if (series.length === 1) {
     html += `<div class="card" style="padding:20px 16px 16px;text-align:center">
       ${chart(series, { unit })}
@@ -822,6 +829,7 @@ export function markerDetail(app) {
   } else {
     html += `<div class="card">${chart(series, { unit })}</div>`;
   }
+  html += afterChart;
 
   /* Объяснение простым языком: сначала «что это», остальное — по нажатию,
      чтобы экран не превращался в справочник. */
