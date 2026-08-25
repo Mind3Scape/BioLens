@@ -967,14 +967,25 @@ function passportSheet(kind) {
 
 /* Что добавляем? Раньше «плюс» молча означал «документ», и снять еду можно
    было, только случайно забредя на её экран. Теперь одна дверь на всё. */
+/* Меню «плюса» из макета: два раздела плитками по две в ряд, а не список
+   строк. Еда идёт первой намеренно — её добавляют по нескольку раз в день,
+   а бланк раз в полгода: наверху должно лежать частое, а не важное.
+   Приём пищи выбирается сразу здесь, чтобы снимок сам встал в свой ряд дня. */
 function addAnySheet() {
-  const row = (act, ic, title, sub) => `<div class="gi" data-pick="${act}">${icon(ic, 'ico s')}
-    <div class="t"><div class="nm" style="font-size:14.5px">${title}</div><div class="sm">${sub}</div></div></div>`;
-  const s = sheet(`<h2>Что добавим?</h2>
-    <div class="grp" style="margin-top:14px">
-      ${row('scan', 'camera', 'Снять бланк камерой', 'анализ, назначение, заключение')}
-      ${row('file', 'file', 'Загрузить файл или PDF', 'из галереи или выписку из лаборатории')}
-      ${row('meal', 'forkknife', 'Снять тарелку', 'калории, белки-жиры-углеводы')}
+  const cell = (pick, ic, title, extra = '') => `<button class="acell" data-pick="${pick}"${extra}>
+    ${icon(ic, 'ico s')}<span>${title}</span></button>`;
+  const s = sheet(`
+    <div class="cap" style="padding:2px 3px 8px">Добавить еду</div>
+    <div class="agrid">
+      ${cell('meal', 'sunrise', 'Завтрак', ' data-slot="breakfast"')}
+      ${cell('meal', 'sun', 'Обед', ' data-slot="lunch"')}
+      ${cell('meal', 'moon', 'Ужин', ' data-slot="dinner"')}
+      ${cell('meal', 'bowlfood', 'Перекус', ' data-slot="snack"')}
+    </div>
+    <div class="cap" style="padding:16px 3px 8px">Добавить анализы</div>
+    <div class="agrid">
+      ${cell('scan', 'camera', 'Сделать фото')}
+      ${cell('file', 'file', 'Из файлов')}
     </div>`);
   s.root.onclick = async (e) => {
     const b = e.target.closest('[data-pick]'); if (!b) return;
