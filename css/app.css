@@ -489,6 +489,38 @@ html[data-theme="dark"] .tile2.wide{background:#25262C;box-shadow:inset 0 0 0 1p
 .dbar i.on{opacity:.9}
 .dbar b{position:absolute;bottom:0;width:2.5px;height:7px;border-radius:2px;background:currentColor}
 
+/* ── гребёнка долей и три счётчика (из макета) ── */
+.comb{display:flex;gap:2px;margin-top:14px;height:16px;align-items:stretch}
+.comb i{flex:1;border-radius:1.5px;min-width:1px}
+.cnt3{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:12px;font-size:12px;font-weight:600;color:var(--ink3)}
+.cnt3 span{display:inline-flex;align-items:baseline;gap:5px}
+.cnt3 .d{width:8px;height:8px;min-width:8px;border-radius:99px;align-self:center}
+.cnt3 .d.ok{background:var(--ok-dot)} .cnt3 .d.bad{background:var(--bad-dot)} .cnt3 .d.edge{background:var(--edge-dot)}
+.cnt3 b{font-size:15px;font-weight:800;color:var(--ink);letter-spacing:-0.3px}
+.cnt3 em{font-style:normal;font-size:11px;color:var(--ink4);margin-left:-3px}
+
+/* ── карточка-группа показателей (из макета) ──
+   Слово о состоянии стоит в шапке группы, поэтому у строк внутри нет точки:
+   заголовок и цвет числа вместе не дают ошибиться, а колонка точек вдоль
+   всего списка добавляла ряби. */
+.gcard{padding:14px 14px 4px}
+.gch{display:flex;align-items:center;gap:9px;font-size:15.5px;font-weight:750;letter-spacing:-0.3px;
+  color:var(--ink);margin-bottom:4px}
+.gci{width:26px;height:26px;min-width:26px;border-radius:99px;display:flex;align-items:center;justify-content:center}
+.gci .ico{width:14px;height:14px}
+.gci.bad{background:var(--bad-soft);color:var(--bad-dot)}
+.gci.edge{background:var(--edge-soft);color:var(--edge-dot)}
+.gci.ok{background:var(--ok-soft);color:var(--ok-dot)}
+.gci.grey{background:var(--field);color:var(--ink3)}
+.gci[class*="tint-"]{background:color-mix(in srgb, var(--stint) 14%, transparent);color:var(--stint)}
+.gcn{font-size:13px;font-weight:650;color:var(--ink4)}
+/* Значение справа: число крупно цветом, единица под ним мелко — как в макете.
+   Раньше единица стояла в строку с числом и воровала у него вес. */
+.mval{text-align:right;min-width:54px}
+.mval .val{font-size:21px;font-weight:800;letter-spacing:-0.7px;line-height:1.05}
+.mval .unit{display:block;margin:2px 0 0;font-size:10.5px;font-weight:600;color:var(--ink4)}
+.mref b{color:var(--ink2);font-weight:750}
+
 /* ── показатели, которые смотрят в паре ──
    Сданное — живой чип со значением, несданное — пунктирный: пробел обязан
    выглядеть как пробел, а не как ещё одна кнопка. */
@@ -578,7 +610,10 @@ svg.scrubbing .pulse-dot{animation:none;opacity:0}
 .cov i.on{background:var(--ink)}
 .cov i.gap{margin-left:7px}
 .syst{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
-.sysc{background:var(--surface);background:color-mix(in srgb, var(--stint) 7%, var(--surface));
+/* Карточка системы БЕЛАЯ, как в макете: цвет системы живёт только в кружке
+   значка. Тонированный фон спорил с полосой состояний — а именно полоса тут
+   главное сообщение. */
+.sysc{background:var(--surface);
   border-radius:var(--r);padding:12px;box-shadow:var(--shadow);border:none;
   font-family:inherit;text-align:left;color:var(--ink);cursor:pointer;display:block;
   animation:tin .3s cubic-bezier(.22,1,.36,1) both}
@@ -595,6 +630,17 @@ svg.scrubbing .pulse-dot{animation:none;opacity:0}
 .sysb.edge{background:var(--edge-soft);color:var(--edge)}
 .sysb.ok{background:var(--ok-soft);color:var(--ok)}
 .sysn{font-size:13.5px;font-weight:720;letter-spacing:-0.3px;margin-top:9px}
+/* Полоса состояний: сегмент на каждый базовый анализ, окрашен своим статусом.
+   Точки «сдан / не сдан» не различали систему с пятью плохими анализами и
+   систему с пятью хорошими. */
+.sysbar{display:flex;gap:3px;margin-top:9px}
+.sysbar i{flex:1;height:4px;border-radius:2px;background:var(--hair2)}
+.sysbar i.s-ok{background:var(--ok-dot)}
+.sysbar i.s-edge{background:var(--edge-dot)}
+.sysbar i.s-out{background:var(--bad-dot)}
+.sysbar i.s-unknown{background:var(--ink4);opacity:.5}
+.sysbar i.s-stale{background:var(--edge-dot);opacity:.42}
+.sysbar i.s-nil{background:var(--hair2)}
 .sysd{display:flex;gap:3px;margin-top:8px}
 .sysd i{flex:1;max-width:16px;height:4px;border-radius:2px;background:var(--hair2)}
 .sysd i.on{background:var(--stint,var(--ink))}

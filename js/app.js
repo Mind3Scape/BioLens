@@ -463,6 +463,7 @@ async function handleAction(el) {
     case 'refresh-models': await loadModels(); break;
     case 'model-tab': app.modelTab = el.dataset.tab; app.modelLimit = 25; render(); break;
     case 'model-free': app.modelFree = el.dataset.v === '1'; app.modelLimit = 25; render(); break;
+    case 'all-by': app.allBy = el.dataset.v; render(); break;
     case 'model-more': app.modelLimit = (app.modelLimit || 25) + 25; render(); break;
     case 'pick-model': {
       const id = el.dataset.id;

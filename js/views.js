@@ -378,24 +378,20 @@ const dayTitle = (iso) => {
    важное, чего список не говорил никогда, — ЧЕГО НЕТ. Пустая система это не
    «здоров», это «не смотрели ни разу». */
 
-/* Сводка состояний (из макета): одна полоса, поделённая цветами по долям, и
-   те же числа словами. Отвечает на «сколько у меня плохо» одним взглядом —
-   раньше это число надо было собирать по списку. Серые здесь — «замер старше
-   двух лет»: неизвестность показываем честно, а не прячем в конец. */
-function statusSummary(list) {
-  const n = { out: 0, edge: 0, ok: 0, stale: 0 };
-  for (const m of list) (m.stale ? n.stale++ : n[m.status] === undefined ? 0 : n[m.status]++);
-  const total = n.out + n.edge + n.ok + n.stale;
+/* Гребёнка долей из макета: штрихи, поделённые по количеству, а не заливка.
+   Сплошные цветные отрезки читались как «шкала от плохого к хорошему», хотя
+   это просто счёт. Штрихи считаются глазом и никакой шкалы не обещают. */
+function combBar(groups) {
+  const total = groups.reduce((n, g) => n + Math.max(0, g.n), 0);
   if (!total) return '';
-  const segs = [
-    ['var(--ok-dot)', n.ok, 'в норме'],
-    ['var(--edge-dot)', n.edge, 'у границы'],
-    ['var(--bad-dot)', n.out, 'вне нормы'],
-    ['var(--hair2)', n.stale, 'устарели'],
-  ].filter(([, k]) => k > 0);
-  const bar = segs.map(([c, k]) => `<i style="flex:${k};background:${c}"></i>`).join('');
-  const words = segs.map(([c, k, w]) => `<span><b style="color:${c === 'var(--hair2)' ? 'var(--ink3)' : c}">${k}</b> ${w}</span>`).join('');
-  return `<div class="ssum"><div class="ssb">${bar}</div><div class="ssw">${words}</div></div>`;
+  const N = 58;
+  let i = 0, out = '';
+  for (const g of groups) {
+    const k = Math.round((Math.max(0, g.n) / total) * N);
+    for (let j = 0; j < k && i < N; j++, i++) out += `<i style="background:${g.color}"></i>`;
+  }
+  while (i < N) { out += `<i style="background:var(--hair2)"></i>`; i++; }
+  return `<div class="comb">${out}</div>`;
 }
 
 export function markers(app) {
@@ -417,30 +413,42 @@ export function markers(app) {
      сдвинулась. Ряд клеточек, стоявший тут раньше, показывал то же число,
      но читался как узор на обоях. */
   const gapsCount = sys.reduce((n, x) => n + x.missing.length, 0);
+
+  /* «Аналитика организма» из макета: крупный процент, гребёнка долей во всю
+     ширину и три счётчика словами. Дуга-манометр показывала ту же цифру, но
+     ничего не говорила о СОСТАВЕ архива: сколько хорошего, сколько плохого,
+     сколько просроченного. Гребёнка отвечает на это одним взглядом. */
+  const fresh = list.filter(m => !m.stale);
+  const nOut = fresh.filter(m => m.status === 'out').length;
+  const nEdge = fresh.filter(m => m.status === 'edge').length;
+  const nOk = fresh.filter(m => m.status === 'ok').length;
+  const nDue = S.dueList().length;
+  const nStale = list.filter(m => m.stale).length;
+
   html += `<div class="card">
-    <div class="row" style="gap:14px;align-items:center">
-      <div class="gg">${gauge(cov.pct, { size: 88, stroke: 9 })}<b>${Math.round(cov.pct * 100)}<span>%</span></b></div>
-      <div class="grow">
-        <div class="nm" style="font-size:15px;font-weight:760">Что я знаю о теле</div>
-        <div class="sm" style="margin-top:3px">Сдано <b style="color:var(--ink)">${cov.known}</b> из ${cov.total} базовых анализов${cov.blank.length ? `, ${cov.blank.length} ${plural(cov.blank.length, 'система', 'системы', 'систем')} не тронуто вовсе` : ''}</div>
-      </div>
+    <div class="nm" style="font-size:16px;font-weight:780;letter-spacing:-0.4px">Аналитика организма</div>
+    <div class="sm" style="margin-top:7px">Сдано базовых анализов</div>
+    <div style="font-size:40px;font-weight:800;letter-spacing:-1.8px;line-height:1.05;margin-top:1px">${Math.round(cov.pct * 100)}<span style="font-size:22px;letter-spacing:-0.6px">%</span></div>
+    ${combBar([
+      { n: nOk, color: 'var(--ok-dot)' },
+      { n: nOut, color: 'var(--bad-dot)' },
+      { n: nEdge + nStale, color: 'var(--edge-dot)' },
+      { n: Math.max(0, cov.total - cov.known), color: 'var(--hair2)' },
+    ])}
+    <div class="cnt3">
+      <span><i class="d ok"></i><b>${nOk}</b><em>/${list.length}</em> Хорошо</span>
+      <span><i class="d bad"></i><b>${nOut}</b><em>/${list.length}</em> Плохо</span>
+      <span><i class="d edge"></i><b>${nDue}</b><em>/${list.length}</em> Пересдать</span>
     </div>
-    ${statusSummary(list)}
-    ${gapsCount ? `<div class="divide"></div>
-      <div class="row tap" data-act="go" data-r="gaps">
-        <span class="nico teal">${icon('target', 'ico s')}</span>
-        <div class="grow"><div class="nm" style="font-size:14px">Что доисследовать</div>
-          <div class="sm">${gapsCount} ${plural(gapsCount, 'анализ', 'анализа', 'анализов')}, которых я не видел ни в одном бланке</div></div>
-        ${chevron()}
-      </div>` : ''}
+    ${gapsCount ? `<button class="btn ghost" data-act="go" data-r="gaps" style="margin-top:14px">Что можно сдать →</button>` : ''}
   </div>`;
 
-  html += `<div class="syst">${sys.map(sysCard).join('')}</div>`;
-
   if (attention.length) {
-    html += `<div class="cap">Требует внимания · ${attention.length}</div>
-      <div class="card list">${attention.map(row).join('')}</div>`;
+    html += groupCard('warning', 'Плохие анализы', 'bad', attention.filter(m => m.status === 'out'));
+    html += groupCard('clock', 'У границы', 'edge', attention.filter(m => m.status === 'edge'));
   }
+
+  html += `<div class="syst">${sys.map(sysCard).join('')}</div>`;
 
   /* Движение за год. Ornament показывает, где ты сейчас; мы показываем, куда
      ты пришёл — и это честная динамика: сдвиги уже отфильтрованы от разброса
@@ -484,21 +492,28 @@ export function markers(app) {
    «1 показатель · 18.07» — и человек не мог понять, много это или мало. */
 function sysCard(s) {
   const gap = s.missing.length;
-  /* Зелёная галочка ставится, ТОЛЬКО когда базовый набор сдан целиком.
-     Иначе «всё хорошо» стояло рядом с «не хватает 4 из 5» — и означало
-     всего лишь «то единственное, что я видел, в норме». */
   const badge = s.out ? `<span class="sysb out">${s.out}</span>`
-    : s.edge ? `<span class="sysb edge">${s.edge}</span>`
-    : (s.state === 'ok' && !gap) ? `<span class="sysb ok">${icon('check', 'ico s')}</span>` : '';
+    : s.edge ? `<span class="sysb edge">${s.edge}</span>` : '';
   const sub = !s.markers.length
-    ? `нет ни одного из ${s.coreTotal}`
-    : s.state === 'stale' ? `последний раз ${S.ruShort(s.lastDate)}`
-    : gap ? `не хватает ${gap} из ${s.coreTotal}` : `всё сдано · ${S.ruShort(s.lastDate)}`;
-  return `<button class="sysc s-${s.state} tint-${s.tint}" data-act="system" data-id="${esc(s.id)}">
-    <div class="sysh"><span class="sysi">${icon(s.icon, 'ico s')}</span>${badge}</div>
+    ? 'Не сдано'
+    : s.state === 'stale' ? `Устарело · ${S.ruShort(s.lastDate)}`
+    : gap ? `${s.coreHave} из ${s.coreTotal} · ${S.ruShort(s.lastDate)}` : `Всё сдано · ${S.ruShort(s.lastDate)}`;
+
+  /* Полоса из макета: сегмент на каждый базовый анализ, и каждый ОКРАШЕН
+     СВОИМ СОСТОЯНИЕМ. Раньше точки говорили только «сдан / не сдан», и
+     система с пятью плохими анализами выглядела так же благополучно, как
+     система с пятью хорошими. Теперь по одной полосе видно и охват, и беду. */
+  const segs = s.core.map(k => {
+    const m = s.markers.find(x => x.key === k);
+    if (!m) return 'nil';
+    if (m.stale) return 'stale';
+    return m.status;
+  });
+  return `<button class="sysc" data-act="system" data-id="${esc(s.id)}">
+    <div class="sysh"><span class="sysi tint-${s.tint}">${icon(s.icon, 'ico s')}</span>${badge}</div>
     <div class="sysn">${esc(s.title)}</div>
-    <div class="sysd">${s.core.map((k, i) => `<i class="${i < s.coreHave ? 'on' : ''}"></i>`).join('')}</div>
-    <div class="syss${gap ? ' gap' : ''}">${esc(sub)}</div>
+    <div class="sysbar">${segs.map(v => `<i class="s-${v}"></i>`).join('')}</div>
+    <div class="syss">${esc(sub)}</div>
   </button>`;
 }
 
@@ -580,10 +595,16 @@ export function systemView(app) {
   }
 
   if (s.markers.length) {
+    /* Порядок групп из макета и он же порядок тревоги: плохое → то, что пора
+       обновить → спокойное. Человек, открывший систему, ищет плохое, а не
+       алфавит. */
     const fresh = s.markers.filter(m => !m.stale);
     const old = s.markers.filter(m => m.stale);
-    if (fresh.length) html += `<div class="cap">Что известно · ${fresh.length}</div><div class="card list">${fresh.map(row).join('')}</div>`;
-    if (old.length) html += `<div class="cap">Давно не мерил · ${old.length}</div><div class="card list">${old.map(row).join('')}</div>`;
+    html += groupCard('warning', 'Плохо', 'bad', fresh.filter(m => m.status === 'out'));
+    html += groupCard('clock', 'У границы', 'edge', fresh.filter(m => m.status === 'edge'));
+    html += groupCard('check', 'В норме', 'ok', fresh.filter(m => m.status === 'ok'));
+    html += groupCard('eye', 'Норма не указана', 'grey', fresh.filter(m => m.status === 'unknown'));
+    html += groupCard('hourglass', 'Пересдать — замер устарел', 'grey', old, { line: false, date: true });
   } else {
     html += emptyBlock(def.icon, 'Пусто',
       'Ни одного числа по этой системе в архиве нет. Появится бланк — всё встанет сюда само.',
@@ -603,32 +624,75 @@ export function markersAll(app) {
   const stale = list.filter(m => m.stale);
   const lastDate = list.map(m => m.last.date).filter(Boolean).sort().slice(-1)[0];
 
-  let html = backHeadWide('Все показатели', `${list.length} ${plural(list.length, 'показатель', 'показателя', 'показателей')}${lastDate ? ` · последний ${S.ruShort(lastDate)}` : ''}`, addBtn);
-  const section = (title, arr) => arr.length ? `<div class="cap">${title} · ${arr.length}</div><div class="card list">${arr.map(row).join('')}</div>` : '';
-  html += section('Требует внимания', attention);
-  html += section('В норме', fine);
-  html += section('Норма не указана', unknown);
-  html += section('Давно не мерил', stale);
+  let html = backHeadWide('Все показатели', `Загружено ${list.length} ${plural(list.length, 'показатель', 'показателя', 'показателей')}${lastDate ? ` · последний ${S.ruShort(lastDate)}` : ''}`, addBtn);
+
+  /* Два взгляда на один список, и переключение между ними — не прихоть:
+     «по состоянию» отвечает на «что у меня плохо», «по системам» — на «что
+     с печенью». Раньше был только первый, и человек, пришедший за печенью,
+     листал весь архив глазами. */
+  const by = app.allBy === 'system' ? 'system' : 'state';
+  html += `<div class="segs" style="margin-bottom:10px">
+    <button class="seg ${by === 'state' ? 'on' : ''}" data-act="all-by" data-v="state">По состоянию</button>
+    <button class="seg ${by === 'system' ? 'on' : ''}" data-act="all-by" data-v="system">По системам</button>
+  </div>`;
+
+  if (by === 'system') {
+    for (const s of mapSystems(list)) {
+      if (!s.markers.length) continue;
+      html += `<div class="card gcard">
+        <div class="gch"><span class="gci tint-${s.tint}">${icon(s.icon, 'ico s')}</span>
+          <div class="grow">${esc(s.title)}</div><span class="gcn">${s.markers.length}</span></div>
+        <div class="list">${s.markers.map(m => row(m, { dot: true })).join('')}</div>
+      </div>`;
+    }
+    return html;
+  }
+
+  html += groupCard('warning', 'Плохие анализы', 'bad', attention.filter(m => m.status === 'out'));
+  html += groupCard('clock', 'У границы', 'edge', attention.filter(m => m.status === 'edge'));
+  html += groupCard('check', 'В норме', 'ok', fine);
+  html += groupCard('eye', 'Норма не указана', 'grey', unknown);
+  html += groupCard('hourglass', 'Давно не мерил', 'grey', stale, { line: false, date: true });
   return html;
 }
 
 /* Строка списка. Раньше справа под числом висела разница вроде «+3.4» — без
    единицы и без ответа на вопрос «с какого момента». Направление и так видно
    по линии слева, поэтому справа осталось одно: сколько сейчас и в чём. */
-function row(m) {
-  const ref = (m.last.refLow != null || m.last.refHigh != null) ? `норма ${S.fmtRef(m.last)}` : 'норма не указана';
-  const sub = m.stale
-    ? `последний раз ${S.ruDate(m.last.date)}`
-    : `${ref}${m.last.refSource === 'типовая' ? ' (общая для взрослых)' : ''} · ${m.count} ${plural(m.count, 'замер', 'замера', 'замеров')}`;
+function row(m, { dot = true, line = true, date = false } = {}) {
   const st = m.stale ? 'unknown' : m.status;
+  /* Подстрока по макету: «Норма: 7–40 · 1 замер · 12.05.2025». Границы
+     полужирным — за ними глаз идёт первым, чтобы сравнить со значением
+     справа. Дата в конце: она нужна, но не она главная. */
+  const hasRef = m.last.refLow != null || m.last.refHigh != null;
+  const parts = [];
+  if (hasRef) parts.push(`Норма: <b>${esc(S.fmtRef(m.last))}</b>${m.last.refSource === 'типовая' ? ' (общая)' : ''}`);
+  else parts.push('Норма не указана');
+  parts.push(`${m.count} ${plural(m.count, 'замер', 'замера', 'замеров')}`);
+  /* Дата — только там, где важна свежесть: в группе просроченного. Иначе
+     строка переносится на второй ряд и карточка теряет ритм макета. */
+  if (date || m.stale) parts.push(S.ruShort(m.last.date));
+
   return `<div class="it" data-act="marker" data-key="${esc(m.key)}">
-    ${statusDot(st)}
-    <div class="grow"><div class="nm">${esc(m.title)}</div><div class="sm">${esc(sub)}</div></div>
-    ${m.stale ? '' : statusLine(m.series, { w: 58, h: 24 })}
-    <div style="text-align:right;min-width:52px">
+    ${dot ? statusDot(st) : ''}
+    <div class="grow"><div class="nm">${esc(m.title)}</div><div class="sm mref">${parts.join(' · ')}</div></div>
+    ${line && !m.stale ? statusLine(m.series, { w: 52, h: 24 }) : ''}
+    <div class="mval">
       <div class="val ${m.last.confidence < 0.75 ? 'doubt' : ''}" style="color:${inkTone(st)}">${S.trim(m.last.value)}</div>
-      <div class="unit" style="display:block;margin:1px 0 0">${esc(m.unit)}</div>
+      <div class="unit">${esc(m.unit)}</div>
     </div>
+  </div>`;
+}
+
+/* Карточка-группа из макета: цветной значок, название, счётчик справа.
+   Слово о состоянии стоит в заголовке группы, поэтому у строк внутри точка
+   не нужна — цвет числа и заголовок вместе не дают ошибиться. */
+function groupCard(iconName, title, tone, arr, { line = true, date = false } = {}) {
+  if (!arr.length) return '';
+  return `<div class="card gcard">
+    <div class="gch"><span class="gci ${tone}">${icon(iconName, 'ico s')}</span>
+      <div class="grow">${esc(title)}</div><span class="gcn">${arr.length}</span></div>
+    <div class="list">${arr.map(m => row(m, { dot: false, line, date })).join('')}</div>
   </div>`;
 }
 
